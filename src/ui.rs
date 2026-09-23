@@ -12,7 +12,7 @@ pub fn step(msg: &str) {
 /// Asks a y/N question. Refuses to guess when there is no terminal to ask on.
 pub fn confirm(prompt: &str) -> Result<bool> {
     if !std::io::stdin().is_terminal() {
-        bail!("確認できない環境のため中止しました。続行するには --yes を付けてください");
+        bail!("確認できない環境のため中止しました。端末から実行してください");
     }
     print!("{prompt} [y/N] ");
     std::io::stdout().flush()?;

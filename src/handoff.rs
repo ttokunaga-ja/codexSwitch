@@ -6,7 +6,7 @@ use crate::config::{Config, Provider};
 use crate::rollout::{self, Copied};
 use crate::threads::{self, Thread};
 use crate::ui;
-use crate::{projects, sidecar};
+use crate::{catalog, projects, sidecar};
 use anyhow::{Context, Result, bail};
 use serde_json::json;
 use std::path::PathBuf;
@@ -14,18 +14,8 @@ use std::time::Duration;
 
 /// How long to wait for the user to quit the sidecar before giving up.
 const QUIT_WAIT: Duration = Duration::from_secs(600);
-
-pub struct Options {
-    pub query: String,
-    pub provider: Option<String>,
-    pub model: Option<String>,
-    pub message: Option<String>,
-    pub name: Option<String>,
-    pub yes: bool,
-    pub no_relaunch: bool,
-    pub dry_run: bool,
-    pub timeout: Duration,
-}
+/// How long the first message may take to complete.
+const TURN_WAIT: Duration = Duration::from_secs(600);
 
 struct Plan<'a> {
     thread: Thread,
@@ -36,46 +26,43 @@ struct Plan<'a> {
     message: String,
 }
 
-pub fn run(cfg: &Config, o: &Options) -> Result<()> {
+/// `provider` comes from `-zai` / `-openrouter`. Without it, the conversation
+/// goes to what the sidecar runs now, model included, like a plain launch.
+pub fn run(cfg: &Config, query: &str, provider: Option<String>) -> Result<()> {
     let conn = threads::open(&cfg.source_home)?;
-    let thread = resolve(&conn, &o.query)?;
+    let thread = resolve(&conn, query)?;
     let chain = rollout::chain(&conn, &thread)?;
     drop(conn);
 
     let active = sidecar::active(cfg)?;
-    let provider = cfg.provider(o.provider.as_deref().unwrap_or(&active.provider))?;
-    let model = o.model.clone().unwrap_or_else(|| provider.model.clone());
-    sidecar::ensure_key(provider)?;
-    crate::catalog::ensure(provider)?;
+    let target = cfg.provider(provider.as_deref().unwrap_or(&active.provider))?;
+    let model = match &provider {
+        None if !active.model.is_empty() => active.model.clone(),
+        _ => target.model.clone(),
+    };
+    sidecar::ensure_key(target)?;
+    if catalog::needs_fetch(target) {
+        ui::step(&format!("{} からモデル一覧を取得しています", target.label));
+    }
+    catalog::ensure(target)?;
 
     let plan = Plan {
-        name: o
-            .name
-            .clone()
-            .unwrap_or_else(|| format!("{}（{}）", thread.label(), short_model(&model))),
-        message: o
-            .message
-            .clone()
-            .unwrap_or_else(|| default_message(provider, &model)),
+        name: format!("{}（{}）", thread.label(), short_model(&model)),
+        message: default_message(target, &model),
         thread,
         chain,
-        provider,
+        provider: target,
         model,
     };
-    let running = sidecar::running(cfg);
-    let relaunch = !o.no_relaunch;
-
-    print_plan(cfg, &plan, &running, relaunch);
-    if o.dry_run {
-        println!("\n--dry-run のため、ここで終了します。");
-        return Ok(());
-    }
-    if !o.yes && !ui::confirm("\n続行しますか？")? {
+    print_plan(cfg, &plan);
+    if !ui::confirm("\n続行しますか？")? {
         println!("中止しました。");
         return Ok(());
     }
 
-    if relaunch && !running.is_empty() {
+    // The project assignment is written while the app is closed, and a new
+    // conversation shows up only after a restart: the sidecar has to quit.
+    if !sidecar::running(cfg).is_empty() {
         println!(
             "\n第2インスタンスをアプリの画面から終了してください。終了を確認したら続けます（Ctrl+C で中止）。\n  終了のしかた: {}",
             sidecar::QUIT_HOWTO
@@ -84,36 +71,25 @@ pub fn run(cfg: &Config, o: &Options) -> Result<()> {
         sidecar::wait_for_quit(cfg, QUIT_WAIT)?;
     }
 
-    let result = execute(cfg, &plan, relaunch, o.timeout);
+    let result = execute(cfg, &plan);
 
-    if relaunch {
-        // Relaunch even on failure so the sidecar is never left closed. On
-        // failure, go back to the provider it was running before.
-        let (p, m) = match &result {
-            Ok(_) => (plan.provider, plan.model.as_str()),
-            Err(_) => match cfg.provider(&active.provider) {
-                Ok(p) => (p, active.model.as_str()),
-                Err(_) => (plan.provider, plan.model.as_str()),
-            },
-        };
-        ui::step(&format!("第2インスタンスを {} で起動しています", p.name));
-        let launched = sidecar::set_active(cfg, p, m).and_then(|()| sidecar::launch(cfg));
-        if let Err(e) = launched {
-            eprintln!("  起動に失敗しました: {e:#}");
-            eprintln!("  手動で起動してください: codexSwitch -{}", p.name);
-        }
+    // Relaunch even on failure so the sidecar is never left closed. On
+    // failure, go back to what it was running before.
+    let (p, m) = match (&result, cfg.provider(&active.provider)) {
+        (Err(_), Ok(p)) => (p, active.model.as_str()),
+        _ => (plan.provider, plan.model.as_str()),
+    };
+    ui::step(&format!("第2インスタンスを -{} で起動しています", p.name));
+    let launched = sidecar::set_active(cfg, p, m).and_then(|()| sidecar::launch(cfg));
+    if let Err(e) = launched {
+        eprintln!("  起動に失敗しました: {e:#}");
+        eprintln!("  手動で起動してください: codexSwitch -{}", p.name);
     }
 
     let new_id = result?;
     println!("\n完了しました。");
     println!("  会話: {}", plan.name);
     println!("  ID  : {new_id}");
-    if !relaunch {
-        println!(
-            "  第2インスタンスを終了して起動し直すと、一覧に表示されます: codexSwitch -{}",
-            plan.provider.name
-        );
-    }
     println!(
         "  CLI で続ける場合: CODEX_HOME={} codex resume {new_id}",
         ui::tilde(&cfg.sidecar_home)
@@ -144,7 +120,7 @@ fn resolve(conn: &rusqlite::Connection, query: &str) -> Result<Thread> {
     }
 }
 
-fn print_plan(cfg: &Config, p: &Plan, running: &[sysinfo::Pid], relaunch: bool) {
+fn print_plan(cfg: &Config, p: &Plan) {
     let size: u64 = p
         .chain
         .iter()
@@ -165,7 +141,6 @@ fn print_plan(cfg: &Config, p: &Plan, running: &[sysinfo::Pid], relaunch: bool) 
         p.provider.name,
         p.model
     );
-    println!("新しい名前   : {}", p.name);
     println!(
         "コピー       : 会話ファイル {} 件（{:.1} MB）{}",
         p.chain.len(),
@@ -187,24 +162,9 @@ fn print_plan(cfg: &Config, p: &Plan, running: &[sysinfo::Pid], relaunch: bool) 
         ),
         None => println!("送信する量   : 不明"),
     }
-    let state = match (running.is_empty(), relaunch) {
-        (false, true) => format!(
-            "起動中（PID {}）→ アプリの画面から終了してもらってから処理し、完了後に {} で起動します",
-            running
-                .iter()
-                .map(|p| p.to_string())
-                .collect::<Vec<_>>()
-                .join(", "),
-            p.provider.name
-        ),
-        (true, true) => format!("停止中 → 完了後に {} で起動します", p.provider.name),
-        (false, false) => "起動中のまま処理します（プロジェクト割り当ては行いません）".to_owned(),
-        (true, false) => "停止中のまま処理します（プロジェクト割り当ては行いません）".to_owned(),
-    };
-    println!("第2インスタンス: {state}");
 }
 
-fn execute(cfg: &Config, p: &Plan, assign_project: bool, timeout: Duration) -> Result<String> {
+fn execute(cfg: &Config, p: &Plan) -> Result<String> {
     ui::step("会話ファイルをコピーしています");
     for path in &p.chain {
         let status = match rollout::copy_into(&cfg.source_home, &cfg.sidecar_home, path)? {
@@ -249,7 +209,7 @@ fn execute(cfg: &Config, p: &Plan, assign_project: bool, timeout: Duration) -> R
         }),
         Duration::from_secs(60),
     )?;
-    let outcome = match server.wait_turn(&new_id, timeout) {
+    let outcome = match server.wait_turn(&new_id, TURN_WAIT) {
         Ok(o) => o,
         Err(e) => bail!("{e:#}\n  作成済みの会話 ID: {new_id}"),
     };
@@ -282,16 +242,14 @@ fn execute(cfg: &Config, p: &Plan, assign_project: bool, timeout: Duration) -> R
         println!("    注意: 一覧にまだ表示されていません（ID: {new_id}）");
     }
 
-    if assign_project {
-        match projects::assign(&cfg.sidecar_home, &new_id, &p.thread.cwd)? {
-            projects::Assignment::Assigned { project } => {
-                ui::step(&format!("プロジェクト「{project}」に割り当てました"))
-            }
-            projects::Assignment::NoMatch => ui::step(&format!(
-                "{} を含むプロジェクトが第2インスタンスにありません（割り当てなし）",
-                ui::tilde(&p.thread.cwd)
-            )),
+    match projects::assign(&cfg.sidecar_home, &new_id, &p.thread.cwd)? {
+        projects::Assignment::Assigned { project } => {
+            ui::step(&format!("プロジェクト「{project}」に割り当てました"))
         }
+        projects::Assignment::NoMatch => ui::step(&format!(
+            "{} を含むプロジェクトが第2インスタンスにありません（割り当てなし）",
+            ui::tilde(&p.thread.cwd)
+        )),
     }
     Ok(new_id)
 }

@@ -4,7 +4,7 @@
 //! README. An optional TOML file (`~/.config/codex-switch/config.toml`, or the
 //! path in `$CODEX_SWITCH_CONFIG`) overrides individual values.
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -21,11 +21,10 @@ pub struct Provider {
     pub catalog: PathBuf,
     pub effort: String,
     pub key_file: PathBuf,
-    /// Responses API endpoint. `init` writes the provider's definition into
-    /// the sidecar's config.toml only when it is known.
-    pub base_url: Option<String>,
+    /// The Responses API endpoint Codex talks to.
+    pub base_url: &'static str,
     /// Where the provider publishes a Codex model catalog, if it does.
-    pub catalog_url: Option<String>,
+    pub catalog_url: Option<&'static str>,
 }
 
 #[derive(Debug, Clone)]
@@ -72,16 +71,14 @@ struct FileConfig {
     providers: BTreeMap<String, FileProvider>,
 }
 
+/// Overrides for `zai` or `openrouter`; anything left out keeps its default.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct FileProvider {
-    label: Option<String>,
-    model: String,
-    catalog: String,
-    effort: String,
-    key_file: String,
-    base_url: Option<String>,
-    catalog_url: Option<String>,
+    model: Option<String>,
+    catalog: Option<String>,
+    effort: Option<String>,
+    key_file: Option<String>,
 }
 
 pub fn home() -> PathBuf {
@@ -149,27 +146,24 @@ impl Config {
 
         let mut providers = default_providers(&sidecar_home);
         for (name, p) in file.providers {
-            // Redefining a built-in provider keeps its endpoints unless given.
-            let builtin = providers.get(&name);
-            let base_url = p
-                .base_url
-                .or_else(|| builtin.and_then(|b| b.base_url.clone()));
-            let catalog_url = p
-                .catalog_url
-                .or_else(|| builtin.and_then(|b| b.catalog_url.clone()));
-            providers.insert(
-                name.clone(),
-                Provider {
-                    label: p.label.unwrap_or_else(|| name.clone()),
-                    name,
-                    model: p.model,
-                    catalog: expand(&p.catalog),
-                    effort: p.effort,
-                    key_file: expand(&p.key_file),
-                    base_url,
-                    catalog_url,
-                },
-            );
+            let Some(d) = providers.get_mut(&name) else {
+                bail!(
+                    "設定ファイル {} の [providers.{name}] は使えません。書けるのは [providers.zai] と [providers.openrouter] だけです",
+                    path.display()
+                );
+            };
+            if let Some(v) = p.model {
+                d.model = v;
+            }
+            if let Some(v) = p.catalog {
+                d.catalog = expand(&v);
+            }
+            if let Some(v) = p.effort {
+                d.effort = v;
+            }
+            if let Some(v) = p.key_file {
+                d.key_file = expand(&v);
+            }
         }
 
         Ok(Self {
@@ -188,11 +182,7 @@ impl Config {
 
     pub fn provider(&self, name: &str) -> Result<&Provider> {
         self.providers.get(name).with_context(|| {
-            let known: Vec<&str> = self.providers.keys().map(String::as_str).collect();
-            format!(
-                "未知のプロバイダです: {name}（設定済み: {}）",
-                known.join(", ")
-            )
+            format!("-{name} は使えません。-zai か -openrouter を指定してください")
         })
     }
 
@@ -218,8 +208,8 @@ fn default_providers(sidecar: &Path) -> BTreeMap<String, Provider> {
             effort: "high".to_owned(),
             key_file: keys.join("zai.key"),
             // Codex's endpoint; Claude Code and OpenCode use other ones.
-            base_url: Some("https://api.z.ai/api/v1".to_owned()),
-            catalog_url: Some("https://api.z.ai/api/v1/models".to_owned()),
+            base_url: "https://api.z.ai/api/v1",
+            catalog_url: Some("https://api.z.ai/api/v1/models"),
         },
     );
     m.insert(
@@ -231,7 +221,7 @@ fn default_providers(sidecar: &Path) -> BTreeMap<String, Provider> {
             catalog: sidecar.join("model_catalog.json"),
             effort: "low".to_owned(),
             key_file: keys.join("openrouter.key"),
-            base_url: Some("https://openrouter.ai/api/v1".to_owned()),
+            base_url: "https://openrouter.ai/api/v1",
             catalog_url: None,
         },
     );

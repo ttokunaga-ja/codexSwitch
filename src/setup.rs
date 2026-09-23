@@ -6,18 +6,9 @@ use crate::catalog::{self, Outcome};
 use crate::config::{Config, Provider};
 use crate::sidecar::{has_key, has_managed_block, managed_block, toml_str};
 use crate::ui;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use std::io::{IsTerminal, Write};
 use std::path::Path;
-
-/// Top-level settings the managed block owns. Left outside it, they would
-/// clash with it (TOML forbids a key twice).
-const MANAGED_KEYS: [&str; 4] = [
-    "model_provider",
-    "model",
-    "model_catalog_json",
-    "model_reasoning_effort",
-];
 
 pub fn run(cfg: &Config) -> Result<()> {
     ui::step(&format!(
@@ -69,20 +60,18 @@ fn config_file(cfg: &Config) -> Result<()> {
         println!("    作成しました: {shown}");
         return Ok(());
     }
-    let original = std::fs::read_to_string(&path)?;
-    let mut text = original.clone();
-    let mut changes = Vec::new();
+    let mut text = std::fs::read_to_string(&path)?;
     if !has_managed_block(&text) {
-        text = add_managed_block(&text, cfg)?;
-        changes.push("管理ブロックを追加".to_owned());
+        bail!(
+            "{shown} は codexSwitch が作った設定ではありません（管理ブロックがありません）。\
+             別の名前に変えるか消してから、もう一度 codexSwitch init を実行してください"
+        );
     }
+    let mut changes = Vec::new();
     let table: toml::Table = toml::from_str(&text)
         .with_context(|| format!("{shown} を解釈できません。形式を確認してください"))?;
     let defined = table.get("model_providers").and_then(|v| v.as_table());
     for p in cfg.providers.values() {
-        let Some(base_url) = &p.base_url else {
-            continue;
-        };
         if defined.is_some_and(|t| t.contains_key(&p.name)) {
             continue;
         }
@@ -90,7 +79,7 @@ fn config_file(cfg: &Config) -> Result<()> {
             text.push('\n');
         }
         text.push('\n');
-        text.push_str(&provider_tables(p, base_url));
+        text.push_str(&provider_tables(p));
         changes.push(format!("[model_providers.{}] を追加", p.name));
     }
     if changes.is_empty() {
@@ -111,11 +100,9 @@ fn config_file(cfg: &Config) -> Result<()> {
     Ok(())
 }
 
+/// What a new config starts with; the first launch sets the real choice.
 fn default_provider(cfg: &Config) -> &Provider {
-    cfg.providers
-        .get("zai")
-        .or_else(|| cfg.providers.values().next())
-        .expect("at least one provider is defined")
+    &cfg.providers["zai"]
 }
 
 fn new_config(cfg: &Config) -> String {
@@ -126,46 +113,15 @@ fn new_config(cfg: &Config) -> String {
         managed_block(p, &p.model)
     );
     for p in cfg.providers.values() {
-        if let Some(base_url) = &p.base_url {
-            s.push('\n');
-            s.push_str(&provider_tables(p, base_url));
-        }
+        s.push('\n');
+        s.push_str(&provider_tables(p));
     }
     s
 }
 
-/// Adds the managed block to a config written by hand. The settings it takes
-/// over are commented out where they were, and the provider they chose is
-/// kept when this tool knows it.
-fn add_managed_block(text: &str, cfg: &Config) -> Result<String> {
-    let table: toml::Table = toml::from_str(text).context("config.toml を解釈できません")?;
-    let current = |k: &str| table.get(k).and_then(|v| v.as_str());
-    let (p, model) = match current("model_provider").and_then(|n| cfg.providers.get(n)) {
-        Some(p) => (p, current("model").unwrap_or(&p.model).to_owned()),
-        None => {
-            let p = default_provider(cfg);
-            (p, p.model.clone())
-        }
-    };
-    let mut body = String::new();
-    let mut top_level = true;
-    for line in text.split_inclusive('\n') {
-        let trimmed = line.trim_start();
-        if trimmed.starts_with('[') {
-            top_level = false;
-        }
-        let key = trimmed.split('=').next().unwrap_or("").trim();
-        if top_level && trimmed.contains('=') && MANAGED_KEYS.contains(&key) {
-            body.push_str("# (codexSwitch init) ");
-        }
-        body.push_str(line);
-    }
-    Ok(format!("{}\n\n{body}", managed_block(p, &model)))
-}
-
 /// `[model_providers.<name>]` and its auth table. The key is read from its
 /// file by a command, so no secret is written into config.toml.
-fn provider_tables(p: &Provider, base_url: &str) -> String {
+fn provider_tables(p: &Provider) -> String {
     let (command, args) = key_reader(&p.key_file);
     let args: Vec<String> = args.iter().map(|a| toml_str(a)).collect();
     format!(
@@ -179,7 +135,7 @@ fn provider_tables(p: &Provider, base_url: &str) -> String {
          args = [{args}]\n",
         name = p.name,
         label = toml_str(&p.label),
-        url = toml_str(base_url),
+        url = toml_str(p.base_url),
         command = toml_str(&command),
         args = args.join(", "),
     )
@@ -270,16 +226,18 @@ mod tests {
     }
 
     #[test]
-    fn a_hand_written_config_keeps_its_provider() {
-        let c = cfg();
-        let hand = "model_provider = \"openrouter\"\nmodel = \"x/y:free\"\nmodel_reasoning_effort = \"low\"\n\n[model_providers.openrouter]\nname = \"OpenRouter\"\n";
-        let out = add_managed_block(hand, &c).unwrap();
-        assert!(has_managed_block(&out));
-        let t: toml::Table = toml::from_str(&out).unwrap();
-        assert_eq!(t["model_provider"].as_str(), Some("openrouter"));
-        assert_eq!(t["model"].as_str(), Some("x/y:free"));
-        assert!(out.contains("# (codexSwitch init) model_provider = \"openrouter\""));
-        // A key with the same prefix inside a table is not touched.
-        assert!(out.contains("[model_providers.openrouter]\nname = \"OpenRouter\""));
+    fn a_config_this_tool_did_not_make_is_left_alone() {
+        let dir = std::env::temp_dir().join(format!("codex-switch-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut c = cfg();
+        c.sidecar_home = dir.clone();
+        let foreign = "model_provider = \"openrouter\"\n";
+        std::fs::write(c.sidecar_config(), foreign).unwrap();
+        assert!(config_file(&c).is_err());
+        assert_eq!(
+            std::fs::read_to_string(c.sidecar_config()).unwrap(),
+            foreign
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

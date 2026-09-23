@@ -23,30 +23,32 @@ use config::Config;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::ExitCode;
-use std::time::Duration;
 
 #[derive(Parser)]
 #[command(
     name = "codexSwitch",
     version,
-    about = "Codex アプリの2つ目のインスタンスを別プロバイダで起動し、会話を引き継ぐ（非公式ツール）",
-    override_usage = "codexSwitch [-<プロバイダ>] [--model <MODEL>]\n       codexSwitch <COMMAND>",
+    about = "Codex アプリの2つ目のインスタンスを Z.ai / OpenRouter で起動し、会話を引き継ぐ（非公式ツール）",
+    override_usage = "codexSwitch [-zai | -openrouter] [--model <MODEL>]\n       \
+        codexSwitch init\n       \
+        codexSwitch handoff <チャット名/ID> [-zai | -openrouter]\n       \
+        codexSwitch status",
     after_help = "例:\n  \
-        codexSwitch init            最初の準備（設定とモデル一覧を作り、API キーの置き場所を案内する）\n  \
-        codexSwitch                 前回と同じプロバイダ・モデルで起動する\n  \
-        codexSwitch -zai            Z.ai で起動する\n  \
-        codexSwitch -openrouter     OpenRouter で起動する\n  \
-        codexSwitch handoff <会話>  本体の会話を引き継ぐ\n\n\
-        終了はアプリの画面から行います（起動中にプロバイダを変えるときも、先に終了します）。"
+        codexSwitch init                 最初の準備（設定とモデル一覧を作り、API キーの置き場所を案内する）\n  \
+        codexSwitch                      前回と同じ内容で起動する\n  \
+        codexSwitch -zai                 Z.ai で起動する\n  \
+        codexSwitch -openrouter          OpenRouter で起動する\n  \
+        codexSwitch handoff <チャット名/ID>  本体の会話を引き継ぐ\n\n\
+        終了はアプリの画面から行います（起動中に -zai / -openrouter を切り替えるときも、先に終了します）。"
 )]
 struct Cli {
     /// 設定ファイル（既定: ~/.config/codex-switch/config.toml）
     #[arg(long, global = true, value_name = "PATH")]
     config: Option<PathBuf>,
-    /// 起動するプロバイダ。-zai のように「-名前」でも指定できる（既定: 前回と同じ）
-    #[arg(long, value_name = "NAME")]
+    /// -zai / -openrouter の受け口。直接は使わない
+    #[arg(long, hide = true)]
     provider: Option<String>,
-    /// モデル（既定: 前回と同じ。プロバイダを指定したときはその既定モデル）
+    /// モデル（既定: 前回と同じ。-zai / -openrouter を付けたときはその既定モデル）
     #[arg(long)]
     model: Option<String>,
     #[command(subcommand)]
@@ -57,48 +59,22 @@ struct Cli {
 enum Command {
     /// 最初の準備: 第2インスタンスの設定とモデル一覧を作り、API キーの置き場所を案内する
     Init,
-    /// 本体の会話を第2インスタンスへ引き継ぐ
+    /// 本体の会話を第2インスタンスへ引き継ぐ（-zai / -openrouter で引き継ぎ先を選べる）
+    #[command(override_usage = "codexSwitch handoff <チャット名/ID> [-zai | -openrouter]")]
     Handoff {
-        /// 会話の ID、またはタイトルの一部
+        /// 引き継ぐ会話の名前（一部でよい）または ID
+        #[arg(value_name = "チャット名/ID")]
         query: String,
-        /// 引き継ぎ先のプロバイダ。-zai のようにも書ける（既定: 第2インスタンスの現在の設定）
-        #[arg(long)]
+        /// -zai / -openrouter の受け口。直接は使わない
+        #[arg(long, hide = true)]
         provider: Option<String>,
-        /// 引き継ぎ先のモデル（既定: プロバイダの既定モデル）
-        #[arg(long)]
-        model: Option<String>,
-        /// 最初のメッセージ（既定: 引き継ぎの要約。常に読み取り専用で実行）
-        #[arg(long)]
-        message: Option<String>,
-        /// 新しい会話の名前（既定: 元の名前（モデル名））
-        #[arg(long)]
-        name: Option<String>,
-        /// 確認を省略する
-        #[arg(short, long)]
-        yes: bool,
-        /// 第2インスタンスの終了を待たず、再起動もしない（プロジェクト割り当ても行わない）
-        #[arg(long)]
-        no_relaunch: bool,
-        /// 実行内容を表示するだけで何もしない
-        #[arg(long)]
-        dry_run: bool,
-        /// 最初のメッセージの完了を待つ秒数
-        #[arg(long, default_value_t = 600, value_name = "SECONDS")]
-        timeout: u64,
     },
     /// 第2インスタンスと設定の状態を表示する
     Status,
 }
 
 /// Options that take a value: the word after them is never a provider flag.
-const VALUE_OPTIONS: [&str; 6] = [
-    "--config",
-    "--provider",
-    "--model",
-    "--message",
-    "--name",
-    "--timeout",
-];
+const VALUE_OPTIONS: [&str; 3] = ["--config", "--provider", "--model"];
 
 /// Rewrites `-zai` into `--provider zai`. clap has no single-dash long
 /// options: to it, `-zai` would be the short flags `-z -a -i`.
@@ -159,38 +135,15 @@ fn run(cli: Cli) -> Result<()> {
     // --config, so the launch-only options are checked here.
     if cli.command.is_some() && (cli.provider.is_some() || cli.model.is_some()) {
         bail!(
-            "プロバイダとモデルは、サブコマンドの後に書いてください（例: codexSwitch handoff <会話> -zai）"
+            "-zai / -openrouter はサブコマンドの後に書いてください（例: codexSwitch handoff <チャット名/ID> -zai）"
         );
     }
     let cfg = Config::load(cli.config.as_deref())?;
     match cli.command {
         None => launch(&cfg, cli.provider, cli.model),
-        Some(Command::Handoff {
-            query,
-            provider,
-            model,
-            message,
-            name,
-            yes,
-            no_relaunch,
-            dry_run,
-            timeout,
-        }) => handoff::run(
-            &cfg,
-            &handoff::Options {
-                query,
-                provider,
-                model,
-                message,
-                name,
-                yes,
-                no_relaunch,
-                dry_run,
-                timeout: Duration::from_secs(timeout),
-            },
-        ),
-        Some(Command::Status) => status(&cfg),
         Some(Command::Init) => setup::run(&cfg),
+        Some(Command::Handoff { query, provider }) => handoff::run(&cfg, &query, provider),
+        Some(Command::Status) => status(&cfg),
     }
 }
 
@@ -232,7 +185,7 @@ fn launch(cfg: &Config, provider: Option<String>, model: Option<String>) -> Resu
             return Ok(());
         }
         bail!(
-            "第2インスタンスが {} / {} で起動中です。プロバイダとモデルは起動時に読まれるため、\
+            "第2インスタンスが {} / {} で起動中です。-zai / -openrouter とモデルは起動時に読まれるため、\
              アプリを終了してから、もう一度実行してください\n  終了のしかた: {}",
             active.provider,
             active.model,
@@ -261,17 +214,15 @@ fn status(cfg: &Config) -> Result<()> {
         Ok(a) => println!("現在の設定      : {} / {}", a.provider, a.model),
         Err(e) => println!("現在の設定      : 読めません（{e:#}）"),
     }
-    println!("プロバイダ:");
+    println!("起動先（既定のモデル）:");
+    let mark = |ok: bool| if ok { "✓" } else { "✗" };
     for p in cfg.providers.values() {
-        let key = std::fs::metadata(&p.key_file)
-            .map(|m| m.len() > 0)
-            .unwrap_or(false);
         println!(
-            "  {:<11} {:<30} キー {}  カタログ {}",
-            p.name,
+            "  {:<12} {:<40} キー {}  モデル一覧 {}",
+            format!("-{}", p.name),
             p.model,
-            if key { "✓" } else { "✗" },
-            if p.catalog.is_file() { "✓" } else { "✗" }
+            mark(sidecar::has_key(p)),
+            mark(p.catalog.is_file())
         );
     }
     #[cfg(windows)]
@@ -331,8 +282,8 @@ mod tests {
             ]
         );
         assert_eq!(
-            expand(&["codexSwitch", "handoff", "abc", "-zai", "-y"]),
-            ["codexSwitch", "handoff", "abc", "--provider", "zai", "-y"]
+            expand(&["codexSwitch", "handoff", "abc", "-zai"]),
+            ["codexSwitch", "handoff", "abc", "--provider", "zai"]
         );
     }
 
@@ -343,9 +294,7 @@ mod tests {
             &["codexSwitch", "-h"],
             &["codexSwitch", "-V"],
             &["codexSwitch", "--model", "-weird"],
-            &["codexSwitch", "handoff", "--message", "-note", "abc"],
             &["codexSwitch", "handoff", "--", "-title"],
-            &["codexSwitch", "handoff", "abc", "--dry-run"],
         ] {
             assert_eq!(expand(args), args);
         }
@@ -372,6 +321,16 @@ mod tests {
             cli.command,
             Some(Command::Handoff { provider: Some(ref p), .. }) if p == "zai"
         ));
+    }
+
+    #[test]
+    fn handoff_takes_only_the_chat_and_the_target() {
+        for removed in ["--dry-run", "-y", "--yes", "--no-relaunch"] {
+            assert!(Cli::try_parse_from(["codexSwitch", "handoff", "abc", removed]).is_err());
+        }
+        for removed in ["--model", "--message", "--name", "--timeout"] {
+            assert!(Cli::try_parse_from(["codexSwitch", "handoff", "abc", removed, "x"]).is_err());
+        }
     }
 
     #[test]

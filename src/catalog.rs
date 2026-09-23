@@ -47,7 +47,7 @@ pub fn ensure(p: &Provider) -> Result<Outcome> {
         write(&p.catalog, text.as_bytes())?;
         return Ok(Outcome::Bundled);
     }
-    let Some(url) = &p.catalog_url else {
+    let Some(url) = p.catalog_url else {
         bail!(
             "{} のモデル一覧がありません: {}",
             p.label,
@@ -162,7 +162,7 @@ mod tests {
                 format!("Catalog = '{}'", file(&p.catalog)),
                 format!("Effort = '{}'", p.effort),
                 format!("Key = '{}'", file(&p.key_file)),
-                format!("BaseUrl = '{}'", p.base_url.as_deref().unwrap()),
+                format!("BaseUrl = '{}'", p.base_url),
             ] {
                 assert!(flat.contains(&expected), "script lacks {expected}");
             }

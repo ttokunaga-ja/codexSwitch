@@ -1,7 +1,7 @@
 ﻿# codexSwitch のスクリプト版（Windows）: Codex アプリの第2インスタンスを準備・起動する
 #
 #   codexSwitch init                     最初の準備（設定とモデル一覧を作り、API キーの置き場所を案内する）
-#   codexSwitch                          前回と同じプロバイダ・モデルで起動
+#   codexSwitch                          前回と同じ内容で起動
 #   codexSwitch -zai                     Z.ai で起動
 #   codexSwitch -openrouter              OpenRouter で起動
 #   codexSwitch -openrouter --model <slug>
@@ -24,7 +24,8 @@ $providers = [ordered]@{
 }
 $managedBegin = '# >>> codexSwitch managed: active provider >>>'
 $managedEnd = '# <<< codexSwitch managed: active provider <<<'
-$managedKeys = 'model_provider', 'model', 'model_catalog_json', 'model_reasoning_effort'
+$notOurs = "$config は codexSwitch が作った設定ではありません（管理ブロックがありません）。" +
+  '別の名前に変えるか消してから、codexSwitch init を実行してください'
 $quitHowto = 'タスクバーの通知領域にある第2インスタンスのアイコンを右クリックし、' +
   '一番下の「Exit」を選ぶ（×ボタンで閉じても、通知領域で動き続けます）'
 
@@ -175,6 +176,11 @@ function Write-Utf8($path, $text) {
   Move-Item -Force $tmp $path
 }
 
+function Has-ManagedBlock($text) {
+  $s = $text.IndexOf($managedBegin); $e = $text.IndexOf($managedEnd)
+  $s -ge 0 -and $e -gt $s
+}
+
 function TomlString($s) { '"' + $s.Replace('\', '\\').Replace('"', '\"') + '"' }
 
 function KeyFile($name) { Join-Path $keyDir $providers[$name].Key }
@@ -238,26 +244,6 @@ function Ensure-Catalog($name) {
 }
 
 # --- init -----------------------------------------------------------------
-function Add-ManagedBlock($text) {
-  $lines = $text -split "`n"
-  $top = $true
-  $current = @{}
-  $body = foreach ($line in $lines) {
-    $t = $line.TrimStart()
-    if ($t.StartsWith('[')) { $top = $false }
-    $key = ($t -split '=', 2)[0].Trim()
-    if ($top -and $t.Contains('=') -and $managedKeys -contains $key) {
-      if ($t -match '=\s*["'']([^"'']*)["'']') { $current[$key] = $Matches[1] }
-      "# (codexSwitch init) $line"
-    } else { $line }
-  }
-  $name = $current['model_provider']
-  if ($name -and $providers.Contains($name)) {
-    $model = if ($current['model']) { $current['model'] } else { $providers[$name].Model }
-  } else { $name = 'zai'; $model = $providers.zai.Model }
-  (ManagedBlock $name $model) + "`n`n" + ($body -join "`n")
-}
-
 function Init-Config {
   $shown = $config.Replace($env:USERPROFILE, '%USERPROFILE%')
   if (-not (Test-Path $config)) {
@@ -270,11 +256,8 @@ function Init-Config {
     return
   }
   $text = [IO.File]::ReadAllText($config)
+  if (-not (Has-ManagedBlock $text)) { Fail $notOurs }
   $changes = @()
-  if ($text.IndexOf($managedBegin) -lt 0 -or $text.IndexOf($managedEnd) -lt $text.IndexOf($managedBegin)) {
-    $text = Add-ManagedBlock $text
-    $changes += '管理ブロックを追加'
-  }
   foreach ($name in $providers.Keys) {
     if ($text -match "(?m)^\s*\[model_providers\.`"?$name`"?\]\s*$") { continue }
     if (-not $text.EndsWith("`n")) { $text += "`n" }
@@ -368,7 +351,7 @@ function Launch($provider, $model) {
   $text = [IO.File]::ReadAllText($config)
   $start = $text.IndexOf($managedBegin)
   $end = $text.IndexOf($managedEnd)
-  if ($start -lt 0 -or $end -lt $start) { Fail "$config に管理ブロックがありません。codexSwitch init を実行すると追加されます" }
+  if (-not (Has-ManagedBlock $text)) { Fail $notOurs }
   $block = $text.Substring($start, $end - $start)
   $active = @{}
   foreach ($k in 'model_provider', 'model') {
@@ -376,7 +359,7 @@ function Launch($provider, $model) {
   }
 
   $name = if ($provider) { $provider } else { $active['model_provider'] }
-  if (-not $providers.Contains([string]$name)) { Fail "未知のプロバイダです: $name（設定済み: $($providers.Keys -join ', ')）" }
+  if (-not $providers.Contains([string]$name)) { Fail "-$name は使えません。-zai か -openrouter を指定してください" }
   $p = $providers[$name]
   # Without a provider, start exactly what ran last time.
   if (-not $model) { $model = if (-not $provider -and $active['model']) { $active['model'] } else { $p.Model } }
@@ -401,7 +384,7 @@ function Launch($provider, $model) {
       Step "第2インスタンスは $name / $model で起動中です。ウィンドウを表示しました"
       return
     }
-    Fail ("第2インスタンスが $($active['model_provider']) / $($active['model']) で起動中です。プロバイダとモデルは起動時に読まれるため、" +
+    Fail ("第2インスタンスが $($active['model_provider']) / $($active['model']) で起動中です。-zai / -openrouter とモデルは起動時に読まれるため、" +
       "アプリを終了してから、もう一度実行してください`n  終了のしかた: $quitHowto")
   }
 
@@ -443,4 +426,5 @@ for ($i = 0; $i -lt $args.Count; $i++) {
     Fail "不明な引数です: $arg（使い方: codexSwitch init | codexSwitch [-zai | -openrouter] [--model <slug>]）"
   }
 }
+if ($provider -and -not $providers.Contains($provider)) { Fail "-$provider は使えません。-zai か -openrouter を指定してください" }
 Launch $provider $model

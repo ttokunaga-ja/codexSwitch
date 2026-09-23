@@ -209,7 +209,7 @@ fn start(cfg: &Config) -> Result<()> {
 
 #[cfg(not(any(target_os = "macos", windows)))]
 fn start(_cfg: &Config) -> Result<()> {
-    bail!("この OS では第2インスタンスの起動に対応していません。--no-relaunch を使ってください")
+    bail!("この OS では第2インスタンスの起動に対応していません")
 }
 
 /// The `codex` binary for the sidecar's app-server. An explicit `codex_bin`
@@ -262,7 +262,7 @@ fn managed_range(text: &str, cfg: &Config) -> Result<(usize, usize)> {
     match (start, end) {
         (Some(s), Some(e)) if s < e => Ok((s, e)),
         _ => bail!(
-            "{} に管理ブロックがありません。codexSwitch init を実行すると追加されます",
+            "{} は codexSwitch が作った設定ではありません（管理ブロックがありません）。別の名前に変えるか消してから、codexSwitch init を実行してください",
             cfg.sidecar_config().display()
         ),
     }

@@ -1,8 +1,8 @@
 # codexSwitch
 
-Codex アプリ（デスクトップ版）の**2つ目のインスタンス**を、Z.ai や OpenRouter などの別プロバイダで起動し、本体の会話をそこへ引き継ぐ CLI ツールです。
+Codex アプリ（デスクトップ版）の**2つ目のインスタンス**を Z.ai Coding Plan や OpenRouter で起動し、本体の会話をそこへ引き継ぐ CLI ツールです。
 
-Run a second Codex app instance on another model provider (Z.ai, OpenRouter, ...) and hand conversations from the main app over to it.
+Run a second Codex app instance on Z.ai or OpenRouter and hand conversations from the main app over to it.
 
 > **非公式ツールです。** OpenAI とは無関係で、OpenAI による承認・保証はありません。
 > Unofficial. Not affiliated with or endorsed by OpenAI.
@@ -11,16 +11,16 @@ Run a second Codex app instance on another model provider (Z.ai, OpenRouter, ...
 
 ```text
 codexSwitch init                  最初の準備（設定とモデル一覧を作り、API キーの置き場所を案内）
-codexSwitch                       第2インスタンスを前回と同じプロバイダ・モデルで起動
+codexSwitch                       第2インスタンスを前回と同じ内容で起動
 codexSwitch -zai                  Z.ai で起動
 codexSwitch -openrouter           OpenRouter で起動
-codexSwitch handoff <ID|タイトル>  本体の会話を第2インスタンスへ引き継ぐ
+codexSwitch handoff <チャット名/ID>  本体の会話を第2インスタンスへ引き継ぐ
 codexSwitch status                第2インスタンスと設定の状態を表示
 ```
 
 macOS と Windows で同じコマンドです。
 
-本体の Codex アプリ（ChatGPT アカウントの OpenAI モデル）には一切手を加えず、その横で別プロバイダ用のアプリを並べて使えます。
+本体の Codex アプリ（ChatGPT アカウントの OpenAI モデル）には一切手を加えず、その横で Z.ai / OpenRouter 用のアプリを並べて使えます。
 
 ```text
 ~/.codex        → 本体アプリ（ChatGPT / OpenAI）   ← 触らない
@@ -29,7 +29,7 @@ macOS と Windows で同じコマンドです。
 
 ## 仕組み
 
-Codex は `CODEX_HOME` ごとに**プロバイダを1つしか持てず**、アプリのモデル選択からプロバイダを切り替えることもできません。そこで、`CODEX_HOME` と Electron のユーザーデータを分けた2つ目のアプリを起動します。ユーザーデータのディレクトリが違えば、アプリの2重起動の制限にかかりません。
+Codex は `CODEX_HOME` ごとに**接続先（`model_provider`）を1つしか持てず**、アプリのモデル選択から接続先を切り替えることもできません。そこで、`CODEX_HOME` と Electron のユーザーデータを分けた2つ目のアプリを起動します。ユーザーデータのディレクトリが違えば、アプリの2重起動の制限にかかりません。
 
 会話の引き継ぎには、Codex CLI に含まれる `codex app-server`（アプリ自身も使っている JSON-RPC）を使います。
 
@@ -143,7 +143,7 @@ args = ["/Users/you/.codex/zai.key"]
 - キーは設定ファイルに書かず、コマンドでキーのファイルから読みます。Windows では `cmd.exe /c type` を使います
 - `requires_openai_auth = false` で、第2インスタンスは ChatGPT へのサインインなしで動きます
 - Z.ai は Codex 用のエンドポイント `https://api.z.ai/api/v1` を使います。Claude Code 用や OpenCode 用とは別です
-- 手で書いた設定があるときは、その提供元とモデルを引き継いで管理ブロックを加え、元の行は `# (codexSwitch init)` を付けて残します。足りない提供元の定義は末尾に足します
+- codexSwitch が作っていない `config.toml`（管理ブロックがないもの）があるときは、書き換えずに止まります。別の名前に変えるか消してから、もう一度実行してください
 
 ### モデル一覧
 
@@ -193,10 +193,10 @@ OpenRouter のモデルを足すときは、1モデルにつき次の形で書�
 $ codexSwitch status
 第2インスタンス : 停止中
 現在の設定      : zai / glm-5.3-flash
-プロバイダ:
-  openrouter  nex-agi/nex-n2.5-pro:free      キー ✓  カタログ ✓
-  zai         glm-5.3-flash                  キー ✓  カタログ ✓
-codex           : /Applications/ChatGPT.app/Contents/Resources/codex (codex-cli 0.155.0-alpha.9.2)
+起動先（既定のモデル）:
+  -openrouter  nex-agi/nex-n2.5-pro:free                キー ✓  モデル一覧 ✓
+  -zai         glm-5.3-flash                            キー ✓  モデル一覧 ✓
+codex           : /Applications/ChatGPT.app/Contents/Resources/codex (codex-cli 0.155.0-alpha.16.3)
 本体のホーム    : ~/.codex
 第2のホーム     : ~/.codex-switch
 ```
@@ -212,14 +212,14 @@ codexSwitch -openrouter --model inclusionai/ling-3.0-flash-vl:free
 
 | 指定 | 起動する内容 |
 | --- | --- |
-| なし | 前回と同じプロバイダ・モデル |
-| `-<プロバイダ>` | そのプロバイダの既定モデル |
+| なし | 前回と同じ内容（`-zai` / `-openrouter` とモデル） |
+| `-zai` / `-openrouter` | それぞれの既定モデル（Z.ai は `glm-5.3-flash`、OpenRouter は `nex-agi/nex-n2.5-pro:free`） |
 | `--model <slug>` | 指定したモデル |
 
 起動中に実行したときは、次のようになります。
 
 - **前回と同じ内容**：第2インスタンスのウィンドウを表示します。×ボタンで閉じたあとに開き直すときにも使えます
-- **違う内容**：何もせずに止まります。プロバイダとモデルは起動時に読まれるため、アプリを終了してから、もう一度実行してください
+- **違う内容**：何もせずに止まります。`-zai` / `-openrouter` とモデルは起動時に読まれるため、アプリを終了してから、もう一度実行してください
 
 ### 終了する
 
@@ -231,12 +231,16 @@ codexSwitch -openrouter --model inclusionai/ling-3.0-flash-vl:free
 ### 会話を引き継ぐ
 
 ```sh
-codexSwitch handoff ログイン画面
-codexSwitch handoff ログイン画面 -openrouter
-codexSwitch handoff 0199aaaa-bbbb-7ccc-8ddd-eeeeffff0000 --dry-run
+codexSwitch handoff <チャット名/ID>
+codexSwitch handoff <チャット名/ID> -zai
+codexSwitch handoff <チャット名/ID> -openrouter
 ```
 
-タイトルの一部か ID で指定します。タイトルは会話の名前を優先して探し、見つからなければ最初のメッセージまで広げます。複数が該当したときは候補を表示して止まります。
+例: `codexSwitch handoff ログイン画面`
+
+引き継ぐ会話は、チャット名（一部でよい）か ID で指定します。チャット名は会話の名前を優先して探し、見つからなければ最初のメッセージまで広げます。複数が該当したときは候補を表示して止まります。
+
+引き継ぎ先は、`-zai` / `-openrouter` を付けなければ第2インスタンスの今の内容（前回起動したものとそのモデル）です。付けたときは、それぞれの既定モデルです。
 
 実行前に内容を表示し、確認を求めます。
 
@@ -245,41 +249,30 @@ codexSwitch handoff 0199aaaa-bbbb-7ccc-8ddd-eeeeffff0000 --dry-run
                gpt-6-astra / openai / ~/dev/example-app
                id 0199aaaa-bbbb-7ccc-8ddd-eeeeffff0000
 引き継ぎ先   : 第2インスタンス（~/.codex-switch）/ zai / glm-5.3-flash
-新しい名前   : ログイン画面のバリデーションを修正（glm-5.3-flash）
 コピー       : 会話ファイル 1 件（138.4 MB）
 最初のメッセージ（読み取り専用で実行）:
-    Z.ai（glm-5.3-flash）へ引き継ぎました。ここまでの状況と、次に着手すべきことを3行以内で整理してください。ファイルの変更やコマンドの実行はしないでください。
+    Z.ai Coding Plan（glm-5.3-flash）へ引き継ぎました。ここまでの状況と、次に着手すべきことを3行以内で整理してください。ファイルの変更やコマンドの実行はしないでください。
 送信する量   : 約 151,898 トークン（元の会話の直近の入力量）
-第2インスタンス: 停止中 → 完了後に zai で起動します
 
 続行しますか？ [y/N]
 ```
 
 第2インスタンスが起動中のときは、確認のあと、アプリの画面から終了するよう表示して待ちます。終了を確認すると続きを行います。10分待っても終了しなければ、何も変更せずに中止します。
 
-| オプション | 内容 |
-| --- | --- |
-| `-<名前>`, `--provider <名前>` | 引き継ぎ先のプロバイダ（既定: 第2インスタンスの現在の設定） |
-| `--model <slug>` | 引き継ぎ先のモデル（既定: プロバイダの既定モデル） |
-| `--message <文>` | 最初のメッセージ（既定: 引き継ぎの要約） |
-| `--name <名前>` | 新しい会話の名前（既定: `元の名前（モデル名）`） |
-| `--no-relaunch` | 第2インスタンスの終了を待たず、再起動もしない（プロジェクト割り当ても行わない） |
-| `--dry-run` | 内容を表示するだけで何もしない |
-| `-y`, `--yes` | 確認を省略する |
-| `--timeout <秒>` | 最初のメッセージの完了を待つ時間（既定: 600） |
+新しい会話の名前は `元の名前（モデル名）` になります。
 
 ## 引き継ぎで行うこと
 
 1. 本体（`~/.codex`）から会話を探す（読み取り専用）
 2. 会話ファイルを第2インスタンスへコピーする。フォークした会話なら、フォーク元までたどってすべてコピーする。コピー後はハッシュで検証する
 3. 確認のうえ、第2インスタンスが起動中なら、アプリの画面から終了されるのを待つ
-4. `app-server` の `thread/fork` で、引き継ぎ先のプロバイダ・モデルの会話を作る
+4. `app-server` の `thread/fork` で、引き継ぎ先（`-zai` / `-openrouter`）とモデルの会話を作る
 5. 名前を付け、最初のメッセージを送る
 6. アプリの一覧に表示されることを確認する
 7. 会話の作業ディレクトリから、第2インスタンスのプロジェクトを探して割り当てる
 8. 第2インスタンスを起動する
 
-途中で失敗しても第2インスタンスは必ず起動し直します。失敗したときは、**元のプロバイダ**で起動します。
+途中で失敗しても第2インスタンスは必ず起動し直します。失敗したときは、**元の内容**で起動します。
 
 ### 最初のメッセージについて
 
@@ -301,17 +294,11 @@ user_data_dir = "~/Library/Application Support/codex-switch/user-data"
 app_path      = "/Applications/ChatGPT.app"
 # codex_bin   = "codex"   # 既定はアプリ同梱の codex
 
-[providers.openrouter]
-label    = "OpenRouter"
+[providers.openrouter]   # -openrouter の既定を変える
 model    = "nvidia/nemotron-3-ultra-550b-a55b:free"
-catalog  = "~/.codex-switch/model_catalog.json"
-effort   = "low"
-key_file = "~/.codex/openrouter.key"
-# base_url    = "https://..."   # 追加したプロバイダだけ必要
-# catalog_url = "https://..."   # モデル一覧を配信しているプロバイダだけ
 ```
 
-`[providers.<名前>]` を書くと、同じ名前の既定の定義を置き換えます（接続先は既定のものを引き継ぎます）。新しい名前を書けば、プロバイダを追加できます。`base_url` を書いておくと、`codexSwitch init` が第2インスタンスの `config.toml` に `model_providers` の定義を足します。追加したプロバイダも `-<名前>` で指定できます。
+`[providers.zai]` / `[providers.openrouter]` には、変えたい項目だけを書きます。書けるのは `model`（既定のモデル）、`catalog`（モデル一覧のファイル）、`effort`（既定の Effort）、`key_file`（API キーのファイル）です。
 
 Windows のスクリプト版はこの設定ファイルを読まず、既定値（`zai` と `openrouter`）で動きます。
 
@@ -322,7 +309,7 @@ Windows のスクリプト版はこの設定ファイルを読まず、既定値
 - プロジェクトの割り当ては、アプリが止まっている間にだけ行います。起動中のアプリはこのファイルを丸ごと書き直すためです。書き換える前に `.codex-global-state.json.codex-switch.bak` へバックアップします
 - 第2インスタンスを終了すると、そこで実行中の作業は止まります
 - 引き継いだ会話は、第2インスタンスへコピーした**元の会話ファイルを参照**しています。`~/.codex-switch/sessions/` 以下のコピーは消さないでください
-- Z.ai などの別プロバイダの会話を、**本体アプリ**に表示することはできません。本体アプリは自分のプロバイダの会話しか並べないためです
+- Z.ai / OpenRouter の会話を、**本体アプリ**に表示することはできません。本体アプリは自分の接続先（OpenAI）の会話しか並べないためです
 - 最初のメッセージは読み取り専用で実行します。macOS ではファイルの書き込みが拒否されること、Windows ではコマンドの起動が拒否されること（codex の Windows 用サンドボックスによる）を実機で確認しています
 - API キーは設定ファイルに書かず、キーファイルから読み込みます
 
@@ -355,7 +342,7 @@ Windows の実機で確認したこと:
 - 会話のコピー、フォーク、名前付け、最初のメッセージの送信、失敗時の再起動
 - 2つ目のインスタンスの起動（本体のアプリには影響しない）
 - スクリプト版の起動：前回と同じ内容での起動、`-zai`・`-openrouter`・`--model` の指定、起動中の再表示と、違う内容を指定したときに止まること、×ボタンで閉じたあとにウィンドウが戻ること
-- スクリプト版の `init`：設定とモデル一覧の作成、Z.ai のモデル一覧の取得（Codex が読み込めることも確認）、2回目は何も変えないこと、手書きの設定への管理ブロックの追加と控えの作成。キーの貼り付け（画面に表示しない入力）は、macOS の Rust 版でのみ確認しています
+- スクリプト版の `init`：設定とモデル一覧の作成、Z.ai のモデル一覧の取得（Codex が読み込めることも確認）、2回目は何も変えないこと、codexSwitch が作っていない設定を書き換えずに止まること。キーの貼り付け（画面に表示しない入力）は、macOS の Rust 版でのみ確認しています
 - 読み取り専用の最初のメッセージでコマンドが起動されず、ファイルも作られないこと
 
 スマート アプリ コントロールに止められたため、最終版の `codexSwitch.exe` での通し実行（終了の待機、最初のメッセージの完了からプロジェクト割り当て、再起動まで）は未確認です
