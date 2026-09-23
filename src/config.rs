@@ -33,6 +33,8 @@ pub struct Config {
     /// Electron user-data dir of the sidecar. A distinct dir is what lets a
     /// second instance start next to the main one.
     pub user_data_dir: PathBuf,
+    /// App bundle launched by `open`. Only the macOS launcher uses it so far.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub app_path: PathBuf,
     /// File stem of the app's main executable, used to find the running sidecar.
     pub app_process_name: String,
