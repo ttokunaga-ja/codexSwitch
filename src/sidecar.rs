@@ -13,8 +13,7 @@ pub const QUIT_VERB: &str = "終了";
 #[cfg(windows)]
 pub const QUIT_VERB: &str = "強制終了";
 
-/// Main-process PIDs of the running sidecar. Helper processes (GPU, network,
-/// crashpad) carry the same `--user-data-dir` but a different executable.
+/// Main-process PIDs of the running sidecar.
 pub fn running(cfg: &Config) -> Vec<Pid> {
     let mut sys = System::new();
     sys.refresh_processes_specifics(
@@ -24,26 +23,43 @@ pub fn running(cfg: &Config) -> Vec<Pid> {
             .with_cmd(UpdateKind::Always)
             .with_exe(UpdateKind::OnlyIfNotSet),
     );
-    let flag = format!("--user-data-dir={}", cfg.user_data_dir.display());
     sys.processes()
         .values()
         .filter(|p| {
+            let args: Vec<String> = p
+                .cmd()
+                .iter()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect();
             let stem = p
                 .exe()
                 .and_then(Path::file_stem)
-                .or_else(|| p.cmd().first().and_then(|a| Path::new(a).file_stem()))
-                .map(|s| s.to_string_lossy().into_owned());
-            // On Windows the switch is passed quoted; compare without quotes.
-            stem.as_deref() == Some(cfg.app_process_name.as_str())
-                && p.cmd()
-                    .iter()
-                    .any(|a| a.to_string_lossy().replace('"', "") == flag)
+                .map(|s| s.to_string_lossy().into_owned())
+                .or_else(|| {
+                    let first = args.first()?;
+                    Some(Path::new(first).file_stem()?.to_string_lossy().into_owned())
+                });
+            is_sidecar_main(stem.as_deref(), &args, cfg)
         })
         .map(|p| p.pid())
         .collect()
 }
 
-/// Stops the sidecar and waits for it to exit.
+/// Electron helpers (renderer, GPU, network...) carry the same
+/// `--user-data-dir`; on Windows they even share the main executable. Chromium
+/// marks every helper with `--type=`, so only the process without it is the
+/// app itself.
+fn is_sidecar_main(exe_stem: Option<&str>, args: &[String], cfg: &Config) -> bool {
+    let flag = format!("--user-data-dir={}", cfg.user_data_dir.display());
+    exe_stem == Some(cfg.app_process_name.as_str())
+        && !args.iter().any(|a| a.starts_with("--type="))
+        // On Windows the switch is passed quoted; compare without quotes.
+        && args.iter().any(|a| a.replace('"', "") == flag)
+}
+
+/// Stops the sidecar and waits until no process of it is left. A failed
+/// request on one PID is not an error by itself: helpers often exit with the
+/// main process before they are asked. What counts is that nothing remains.
 pub fn quit(cfg: &Config, pids: &[Pid]) -> Result<()> {
     let mut sys = System::new();
     sys.refresh_processes_specifics(
@@ -53,7 +69,7 @@ pub fn quit(cfg: &Config, pids: &[Pid]) -> Result<()> {
     );
     for pid in pids {
         if let Some(p) = sys.process(*pid) {
-            request_quit(p)?;
+            request_quit(p);
         }
     }
     let deadline = Instant::now() + Duration::from_secs(20);
@@ -70,24 +86,15 @@ pub fn quit(cfg: &Config, pids: &[Pid]) -> Result<()> {
 
 /// macOS: a regular termination request; the app shuts down cleanly.
 #[cfg(unix)]
-fn request_quit(p: &sysinfo::Process) -> Result<()> {
-    match p.kill_with(sysinfo::Signal::Term) {
-        Some(true) => Ok(()),
-        _ => bail!(
-            "第2インスタンス（PID {}）に終了を要求できませんでした",
-            p.pid()
-        ),
-    }
+fn request_quit(p: &sysinfo::Process) {
+    let _ = p.kill_with(sysinfo::Signal::Term);
 }
 
 /// Windows: a close request only hides the window, so terminate the main
 /// process. Its helper processes exit with it.
 #[cfg(windows)]
-fn request_quit(p: &sysinfo::Process) -> Result<()> {
-    if !p.kill() {
-        bail!("第2インスタンス（PID {}）を終了できませんでした", p.pid());
-    }
-    Ok(())
+fn request_quit(p: &sysinfo::Process) {
+    let _ = p.kill();
 }
 
 pub fn ensure_key(p: &Provider) -> Result<()> {
@@ -265,6 +272,35 @@ fn toml_str(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn cfg(user_data_dir: &str) -> Config {
+        let mut c = Config::load(Some(Path::new("/nonexistent/codex-switch.toml"))).unwrap();
+        c.user_data_dir = PathBuf::from(user_data_dir);
+        c
+    }
+
+    #[test]
+    fn only_the_main_process_counts() {
+        let c = cfg("C:\\Users\\x\\AppData\\Local\\codex-switch\\user-data");
+        let args = |extra: &[&str]| -> Vec<String> {
+            let mut v = vec!["C:\\Program Files\\WindowsApps\\app\\ChatGPT.exe".to_owned()];
+            v.extend(extra.iter().map(|s| s.to_string()));
+            v
+        };
+        let flag = "\"--user-data-dir=C:\\Users\\x\\AppData\\Local\\codex-switch\\user-data\"";
+        // The app itself, with the switch passed quoted.
+        assert!(is_sidecar_main(Some("ChatGPT"), &args(&[flag]), &c));
+        // Its renderer: same exe and user data, but a helper.
+        assert!(!is_sidecar_main(
+            Some("ChatGPT"),
+            &args(&["--type=renderer", flag]),
+            &c
+        ));
+        // The main instance, which has no --user-data-dir.
+        assert!(!is_sidecar_main(Some("ChatGPT"), &args(&[]), &c));
+        // Another program that happens to get the same switch.
+        assert!(!is_sidecar_main(Some("Other"), &args(&[flag]), &c));
+    }
 
     #[test]
     fn toml_strings_round_trip() {
