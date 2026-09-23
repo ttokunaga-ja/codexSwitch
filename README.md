@@ -10,10 +10,14 @@ Run a second Codex app instance on another model provider (Z.ai, OpenRouter, ...
 ## できること
 
 ```text
-codex-switch status                     第2インスタンスと設定の状態を表示
-codex-switch launch [zai|openrouter]    第2インスタンスを指定プロバイダで起動
-codex-switch handoff <ID|タイトル>       本体の会話を第2インスタンスへ引き継ぐ
+codexSwitch                       第2インスタンスを前回と同じプロバイダ・モデルで起動
+codexSwitch -zai                  Z.ai で起動
+codexSwitch -openrouter           OpenRouter で起動
+codexSwitch handoff <ID|タイトル>  本体の会話を第2インスタンスへ引き継ぐ
+codexSwitch status                第2インスタンスと設定の状態を表示
 ```
+
+macOS と Windows で同じコマンドです。
 
 本体の Codex アプリ（ChatGPT アカウントの OpenAI モデル）には一切手を加えず、その横で別プロバイダ用のアプリを並べて使えます。
 
@@ -137,22 +141,33 @@ args = ["/Users/you/.codex/openrouter.key"]
 
 ## インストール
 
-macOS:
+### macOS
 
 ```sh
 git clone https://github.com/ttokunaga-ja/codexSwitch.git
 cd codexSwitch
-./install.sh            # ~/.local/bin/codex-switch に入ります
+./install.sh            # ~/.local/bin/codexSwitch に入ります
 ```
 
-Windows: MSVC 版の Rust（`stable-x86_64-pc-windows-msvc`）で `cargo build --release` するか、GitHub Actions の成果物（`codex-switch-Windows`）を使ってください。
+### Windows
+
+次のどちらかを、PATH の通ったフォルダ（例: `%USERPROFILE%\.local\bin`）に置きます。
+
+- **exe 版**：MSVC 版の Rust（`stable-x86_64-pc-windows-msvc`）で `cargo build --release` した `target\release\codexSwitch.exe`、または GitHub Actions の成果物（`codexSwitch-Windows`）
+- **スクリプト版**：`windows\codexSwitch.cmd` と `windows\codexSwitch-launch.ps1` の2つ。起動（`codexSwitch`、`codexSwitch -zai` など）だけを行います。スマート アプリ コントロールで exe が止められる環境向けです
+
+  ```powershell
+  Copy-Item windows\codexSwitch.cmd, windows\codexSwitch-launch.ps1 "$env:USERPROFILE\.local\bin"
+  ```
+
+exe 版とスクリプト版は、どちらか一方だけを置いてください。
 
 ## 使い方
 
 ### 状態を見る
 
 ```text
-$ codex-switch status
+$ codexSwitch status
 第2インスタンス : 停止中
 現在の設定      : zai / glm-5.3-flash
 プロバイダ:
@@ -166,17 +181,36 @@ codex           : /Applications/ChatGPT.app/Contents/Resources/codex (codex-cli 
 ### 起動する
 
 ```sh
-codex-switch launch zai
-codex-switch launch openrouter --model inclusionai/ling-3.0-flash-vl:free
+codexSwitch
+codexSwitch -zai
+codexSwitch -openrouter
+codexSwitch -openrouter --model inclusionai/ling-3.0-flash-vl:free
 ```
 
-プロバイダは起動時に読まれるため、起動中なら確認のうえ終了してから起動し直します。
+| 指定 | 起動する内容 |
+| --- | --- |
+| なし | 前回と同じプロバイダ・モデル |
+| `-<プロバイダ>` | そのプロバイダの既定モデル |
+| `--model <slug>` | 指定したモデル |
+
+起動中に実行したときは、次のようになります。
+
+- **前回と同じ内容**：第2インスタンスのウィンドウを表示します。×ボタンで閉じたあとに開き直すときにも使えます
+- **違う内容**：何もせずに止まります。プロバイダとモデルは起動時に読まれるため、アプリを終了してから、もう一度実行してください
+
+### 終了する
+
+アプリの画面から終了します。このツールがアプリを終了させることはありません（会話の引き継ぎを除く。下記）。ウィンドウを閉じるだけでは、どちらの OS でもアプリは動き続けます。
+
+- **macOS**：第2インスタンスのウィンドウを前面にして ⌘Q
+- **Windows**：タスクバーの通知領域にある第2インスタンスのアイコンを右クリックし、一番下の「Exit」。本体のアプリのアイコンも並ぶので、メニューに表示される会話で見分けてください
 
 ### 会話を引き継ぐ
 
 ```sh
-codex-switch handoff ログイン画面
-codex-switch handoff 0199aaaa-bbbb-7ccc-8ddd-eeeeffff0000 --dry-run
+codexSwitch handoff ログイン画面
+codexSwitch handoff ログイン画面 -openrouter
+codexSwitch handoff 0199aaaa-bbbb-7ccc-8ddd-eeeeffff0000 --dry-run
 ```
 
 タイトルの一部か ID で指定します。タイトルは会話の名前を優先して探し、見つからなければ最初のメッセージまで広げます。複数が該当したときは候補を表示して止まります。
@@ -200,7 +234,7 @@ codex-switch handoff 0199aaaa-bbbb-7ccc-8ddd-eeeeffff0000 --dry-run
 
 | オプション | 内容 |
 | --- | --- |
-| `--provider <名前>` | 引き継ぎ先のプロバイダ（既定: 第2インスタンスの現在の設定） |
+| `-<名前>`, `--provider <名前>` | 引き継ぎ先のプロバイダ（既定: 第2インスタンスの現在の設定） |
 | `--model <slug>` | 引き継ぎ先のモデル（既定: プロバイダの既定モデル） |
 | `--message <文>` | 最初のメッセージ（既定: 引き継ぎの要約） |
 | `--name <名前>` | 新しい会話の名前（既定: `元の名前（モデル名）`） |
@@ -250,7 +284,9 @@ effort   = "low"
 key_file = "~/.codex/openrouter.key"
 ```
 
-`[providers.<名前>]` を書くと、同じ名前の既定の定義を置き換えます。新しい名前を書けば、プロバイダを追加できます（第2インスタンスの `config.toml` にも同じ名前の `model_providers` が必要です）。
+`[providers.<名前>]` を書くと、同じ名前の既定の定義を置き換えます。新しい名前を書けば、プロバイダを追加できます（第2インスタンスの `config.toml` にも同じ名前の `model_providers` が必要です）。追加したプロバイダも `-<名前>` で指定できます。
+
+Windows のスクリプト版はこの設定ファイルを読まず、既定値（`zai` と `openrouter`）で動きます。
 
 ## 注意事項
 
@@ -281,9 +317,9 @@ Windows 版のアプリは MSIX パッケージなので、macOS とは次の点
 
 - **起動**：パッケージには実行エイリアスがないため、`Invoke-CommandInDesktopPackage` でパッケージの中で `cmd.exe` を動かし、そこで環境変数を設定してから `ChatGPT.exe` を起動します
 - **codex の実行ファイル**：パッケージ内の `codex.exe` は外から実行できない（Access is denied）ため、アプリの版ごとに `%LOCALAPPDATA%\codex-switch\` へ複製して使います（初回のみ約300MB）
-- **終了**：Windows 版のアプリは通常の終了要求では閉じず、バックグラウンドに残ります。そのため確認のうえ**強制終了**します。第2インスタンスで実行中の作業は中断されます
-- **実行する場所**：サインイン中のデスクトップのターミナルから実行してください。SSH などから実行すると、アプリは起動しても画面に表示されません
-- **スマート アプリ コントロール**：オンの環境では、署名のない `codex-switch.exe` が Windows によって止められることがあります（終了コード 4551）。判定はファイルごとのため、版によって通ったり止められたりします
+- **閉じる・終了する**：×ボタンで閉じても、アプリは通知領域に残って動き続けます。終了は通知領域のアイコンのメニューから行います。外からの通常の終了要求でも閉じないため、会話の引き継ぎで第2インスタンスを止める必要があるときは、確認のうえ**強制終了**します。第2インスタンスで実行中の作業は中断されます
+- **実行する場所**：サインイン中のデスクトップのターミナルから実行してください。SSH などから実行すると、アプリは起動しても画面に表示されません（スクリプト版は、この場合エラーで止まります）
+- **スマート アプリ コントロール**：オンの環境では、署名のない `codexSwitch.exe` が Windows によって止められることがあります（終了コード 4551）。判定はファイルごとのため、版によって通ったり止められたりします。止められる場合は、起動にはスクリプト版を使ってください
 
 Windows の実機で確認したこと:
 
@@ -291,9 +327,10 @@ Windows の実機で確認したこと:
 - 状態表示、アプリのパッケージ検出、codex.exe の初回複製
 - 会話のコピー、フォーク、名前付け、最初のメッセージの送信、失敗時の再起動
 - 2つ目のインスタンスの起動（本体のアプリには影響しない）、強制終了で補助プロセスも含めて終了すること
+- スクリプト版の起動：前回と同じ内容での起動、`-zai`・`-openrouter`・`--model` の指定、起動中の再表示と、違う内容を指定したときに止まること、×ボタンで閉じたあとにウィンドウが戻ること
 - 読み取り専用の最初のメッセージでコマンドが起動されず、ファイルも作られないこと
 
-スマート アプリ コントロールに止められたため、最終版の `codex-switch.exe` での通し実行（最初のメッセージの完了からプロジェクト割り当て、強制終了を経た再起動まで）は未確認です
+スマート アプリ コントロールに止められたため、最終版の `codexSwitch.exe` での通し実行（最初のメッセージの完了からプロジェクト割り当て、強制終了を経た再起動まで）は未確認です
 
 ## ライセンス
 

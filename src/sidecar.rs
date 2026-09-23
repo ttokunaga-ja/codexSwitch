@@ -13,6 +13,17 @@ pub const QUIT_VERB: &str = "終了";
 #[cfg(windows)]
 pub const QUIT_VERB: &str = "強制終了";
 
+/// How to quit the app from its own UI. Closing the window is not enough on
+/// either OS: the app keeps running (on Windows, in the notification area).
+#[cfg(target_os = "macos")]
+pub const QUIT_HOWTO: &str =
+    "第2インスタンスのウィンドウを前面にして ⌘Q（ウィンドウを閉じるだけでは終了しません）";
+#[cfg(windows)]
+pub const QUIT_HOWTO: &str = "タスクバーの通知領域にある第2インスタンスのアイコンを右クリックし、\
+     一番下の「Exit」を選ぶ（×ボタンで閉じても、通知領域で動き続けます）";
+#[cfg(not(any(target_os = "macos", windows)))]
+pub const QUIT_HOWTO: &str = "アプリのメニューから終了する";
+
 /// Main-process PIDs of the running sidecar.
 pub fn running(cfg: &Config) -> Vec<Pid> {
     let mut sys = System::new();
@@ -158,6 +169,13 @@ pub fn set_active(cfg: &Config, p: &Provider, model: &str) -> Result<()> {
     std::fs::write(&tmp, updated)?;
     std::fs::rename(&tmp, &path)?;
     Ok(())
+}
+
+/// Brings a running sidecar's window to the front. The app allows one
+/// instance per user-data dir, so the new process exits at once and hands
+/// over to the running one, which then opens its window.
+pub fn show(cfg: &Config) -> Result<()> {
+    start(cfg)
 }
 
 /// Starts the sidecar and waits until it is actually running: both launchers

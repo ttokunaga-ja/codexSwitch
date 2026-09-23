@@ -9,6 +9,10 @@ readme = "README.md"
 keywords = ["codex", "openrouter", "cli"]
 categories = ["command-line-utilities"]
 
+[[bin]]
+name = "codexSwitch"
+path = "src/main.rs"
+
 [dependencies]
 anyhow = "1.0.104"
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }

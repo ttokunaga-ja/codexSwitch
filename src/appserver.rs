@@ -76,7 +76,7 @@ impl AppServer {
         };
         server.request(
             "initialize",
-            json!({"clientInfo": {"name": "codex-switch", "version": env!("CARGO_PKG_VERSION")}}),
+            json!({"clientInfo": {"name": "codexSwitch", "version": env!("CARGO_PKG_VERSION")}}),
             Duration::from_secs(60),
         )?;
         Ok(server)
@@ -183,7 +183,7 @@ impl AppServer {
         }
         let reply = json!({
             "id": msg["id"],
-            "error": {"code": -32601, "message": "codex-switch does not handle this request"}
+            "error": {"code": -32601, "message": "codexSwitch does not handle this request"}
         });
         self.send(&reply)?;
         Ok(true)

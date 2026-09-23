@@ -23,8 +23,8 @@ jobs:
       - run: cargo build --release --locked
       - uses: actions/upload-artifact@v4
         with:
-          name: codex-switch-${{ runner.os }}
+          name: codexSwitch-${{ runner.os }}
           path: |
-            target/release/codex-switch
-            target/release/codex-switch.exe
+            target/release/codexSwitch
+            target/release/codexSwitch.exe
           if-no-files-found: error

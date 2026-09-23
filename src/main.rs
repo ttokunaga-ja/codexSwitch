@@ -1,4 +1,4 @@
-//! codex-switch — run a second Codex app instance on another model provider
+//! codexSwitch — run a second Codex app instance on another model provider
 //! and hand conversations over to it.
 //!
 //! Unofficial. Not affiliated with or endorsed by OpenAI.
@@ -15,45 +15,49 @@ mod ui;
 #[cfg_attr(not(windows), allow(dead_code))]
 mod windows;
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
 use config::Config;
+use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
 
 #[derive(Parser)]
 #[command(
-    name = "codex-switch",
+    name = "codexSwitch",
     version,
-    about = "Codex アプリの2つ目のインスタンスを別プロバイダで起動し、会話を引き継ぐ（非公式ツール）"
+    about = "Codex アプリの2つ目のインスタンスを別プロバイダで起動し、会話を引き継ぐ（非公式ツール）",
+    override_usage = "codexSwitch [-<プロバイダ>] [--model <MODEL>]\n       codexSwitch <COMMAND>",
+    after_help = "例:\n  \
+        codexSwitch                 前回と同じプロバイダ・モデルで起動する\n  \
+        codexSwitch -zai            Z.ai で起動する\n  \
+        codexSwitch -openrouter     OpenRouter で起動する\n  \
+        codexSwitch handoff <会話>  本体の会話を引き継ぐ\n\n\
+        終了はアプリの画面から行います（起動中にプロバイダを変えるときも、先に終了します）。",
+    args_conflicts_with_subcommands = true
 )]
 struct Cli {
     /// 設定ファイル（既定: ~/.config/codex-switch/config.toml）
     #[arg(long, global = true, value_name = "PATH")]
     config: Option<PathBuf>,
+    /// 起動するプロバイダ。-zai のように「-名前」でも指定できる（既定: 前回と同じ）
+    #[arg(long, value_name = "NAME")]
+    provider: Option<String>,
+    /// モデル（既定: 前回と同じ。プロバイダを指定したときはその既定モデル）
+    #[arg(long)]
+    model: Option<String>,
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Subcommand)]
 enum Command {
-    /// 第2インスタンスを指定したプロバイダで起動する
-    Launch {
-        /// プロバイダ（既定: 現在の設定）
-        provider: Option<String>,
-        /// モデル（既定: プロバイダの既定モデル）
-        #[arg(long)]
-        model: Option<String>,
-        /// 起動中なら確認せずに再起動する
-        #[arg(short, long)]
-        yes: bool,
-    },
     /// 本体の会話を第2インスタンスへ引き継ぐ
     Handoff {
         /// 会話の ID、またはタイトルの一部
         query: String,
-        /// 引き継ぎ先のプロバイダ（既定: 第2インスタンスの現在の設定）
+        /// 引き継ぎ先のプロバイダ。-zai のようにも書ける（既定: 第2インスタンスの現在の設定）
         #[arg(long)]
         provider: Option<String>,
         /// 引き継ぎ先のモデル（既定: プロバイダの既定モデル）
@@ -82,6 +86,52 @@ enum Command {
     Status,
 }
 
+/// Options that take a value: the word after them is never a provider flag.
+const VALUE_OPTIONS: [&str; 6] = [
+    "--config",
+    "--provider",
+    "--model",
+    "--message",
+    "--name",
+    "--timeout",
+];
+
+/// Rewrites `-zai` into `--provider zai`. clap has no single-dash long
+/// options: to it, `-zai` would be the short flags `-z -a -i`.
+fn expand_provider_flags(args: impl IntoIterator<Item = OsString>) -> Vec<OsString> {
+    let mut out = Vec::new();
+    let mut after_value_option = false;
+    let mut after_terminator = false;
+    for (i, arg) in args.into_iter().enumerate() {
+        let text = arg.to_str().map(str::to_owned);
+        let name = match &text {
+            Some(t) if i > 0 && !after_value_option && !after_terminator => provider_flag(t),
+            _ => None,
+        };
+        after_value_option = text.as_deref().is_some_and(|t| VALUE_OPTIONS.contains(&t));
+        after_terminator |= text.as_deref() == Some("--");
+        match name {
+            Some(name) => {
+                out.push("--provider".into());
+                out.push(name.into());
+            }
+            None => out.push(arg),
+        }
+    }
+    out
+}
+
+/// `-zai` → `zai`. Single-letter flags such as `-y` and `-h` are left alone.
+fn provider_flag(arg: &str) -> Option<&str> {
+    let name = arg.strip_prefix('-')?;
+    let valid = name.len() >= 2
+        && name.starts_with(|c: char| c.is_ascii_alphanumeric())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    valid.then_some(name)
+}
+
 fn main() -> ExitCode {
     // Rust ignores SIGPIPE, which makes `println!` panic when the output is
     // piped into something like `head`. Behave like other CLI tools instead.
@@ -90,7 +140,7 @@ fn main() -> ExitCode {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
     }
 
-    let cli = Cli::parse();
+    let cli = Cli::parse_from(expand_provider_flags(std::env::args_os()));
     match run(cli) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
@@ -103,12 +153,8 @@ fn main() -> ExitCode {
 fn run(cli: Cli) -> Result<()> {
     let cfg = Config::load(cli.config.as_deref())?;
     match cli.command {
-        Command::Launch {
-            provider,
-            model,
-            yes,
-        } => launch(&cfg, provider, model, yes),
-        Command::Handoff {
+        None => launch(&cfg, cli.provider, cli.model),
+        Some(Command::Handoff {
             query,
             provider,
             model,
@@ -118,7 +164,7 @@ fn run(cli: Cli) -> Result<()> {
             no_relaunch,
             dry_run,
             timeout,
-        } => handoff::run(
+        }) => handoff::run(
             &cfg,
             &handoff::Options {
                 query,
@@ -132,34 +178,40 @@ fn run(cli: Cli) -> Result<()> {
                 timeout: Duration::from_secs(timeout),
             },
         ),
-        Command::Status => status(&cfg),
+        Some(Command::Status) => status(&cfg),
     }
 }
 
-fn launch(cfg: &Config, provider: Option<String>, model: Option<String>, yes: bool) -> Result<()> {
+/// Starts the sidecar. A running sidecar is never stopped here: quitting is
+/// left to the app's own UI, so nothing running in it is cut off.
+fn launch(cfg: &Config, provider: Option<String>, model: Option<String>) -> Result<()> {
     let active = sidecar::active(cfg)?;
     let p = cfg.provider(provider.as_deref().unwrap_or(&active.provider))?;
-    let model = model.unwrap_or_else(|| p.model.clone());
+    // Without a provider, start exactly what ran last time.
+    let model = match model {
+        Some(m) => m,
+        None if provider.is_none() && !active.model.is_empty() => active.model.clone(),
+        None => p.model.clone(),
+    };
     sidecar::ensure_key(p)?;
 
-    let running = sidecar::running(cfg);
-    if !running.is_empty() {
-        println!(
-            "第2インスタンスは起動中です。プロバイダは起動時に読まれるため、再起動が必要です。"
-        );
-        if cfg!(windows) {
-            println!("Windows 版のアプリは強制終了します。実行中の作業は中断されます。");
-        }
-        let question = format!("{}して再起動しますか？", sidecar::QUIT_VERB);
-        if !yes && !ui::confirm(&question)? {
-            println!("中止しました。");
+    if !sidecar::running(cfg).is_empty() {
+        if p.name == active.provider && model == active.model {
+            // Starting the app again makes the running one show its window.
+            sidecar::show(cfg)?;
+            ui::step(&format!(
+                "第2インスタンスは {} / {model} で起動中です。ウィンドウを表示しました",
+                p.name
+            ));
             return Ok(());
         }
-        ui::step(&format!(
-            "第2インスタンスを{}しています",
-            sidecar::QUIT_VERB
-        ));
-        sidecar::quit(cfg, &running)?;
+        bail!(
+            "第2インスタンスが {} / {} で起動中です。プロバイダとモデルは起動時に読まれるため、\
+             アプリを終了してから、もう一度実行してください\n  終了のしかた: {}",
+            active.provider,
+            active.model,
+            sidecar::QUIT_HOWTO
+        );
     }
     sidecar::set_active(cfg, p, &model)?;
     sidecar::launch(cfg)?;
@@ -223,4 +275,76 @@ fn status(cfg: &Config) -> Result<()> {
     println!("本体のホーム    : {}", ui::tilde(&cfg.source_home));
     println!("第2のホーム     : {}", ui::tilde(&cfg.sidecar_home));
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn expand(args: &[&str]) -> Vec<String> {
+        expand_provider_flags(args.iter().map(OsString::from))
+            .into_iter()
+            .map(|a| a.into_string().unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn provider_flags_become_provider_options() {
+        assert_eq!(
+            expand(&["codexSwitch", "-zai"]),
+            ["codexSwitch", "--provider", "zai"]
+        );
+        assert_eq!(
+            expand(&["codexSwitch", "-openrouter", "--model", "x/y:free"]),
+            [
+                "codexSwitch",
+                "--provider",
+                "openrouter",
+                "--model",
+                "x/y:free"
+            ]
+        );
+        assert_eq!(
+            expand(&["codexSwitch", "handoff", "abc", "-zai", "-y"]),
+            ["codexSwitch", "handoff", "abc", "--provider", "zai", "-y"]
+        );
+    }
+
+    #[test]
+    fn other_arguments_are_left_alone() {
+        for args in [
+            &["codexSwitch"][..],
+            &["codexSwitch", "-h"],
+            &["codexSwitch", "-V"],
+            &["codexSwitch", "--model", "-weird"],
+            &["codexSwitch", "handoff", "--message", "-note", "abc"],
+            &["codexSwitch", "handoff", "--", "-title"],
+            &["codexSwitch", "handoff", "abc", "--dry-run"],
+        ] {
+            assert_eq!(expand(args), args);
+        }
+    }
+
+    #[test]
+    fn parses_the_launch_forms() {
+        let cli = Cli::try_parse_from(expand_provider_flags(
+            ["codexSwitch", "-openrouter", "--model", "m"].map(OsString::from),
+        ))
+        .unwrap();
+        assert!(cli.command.is_none());
+        assert_eq!(cli.provider.as_deref(), Some("openrouter"));
+        assert_eq!(cli.model.as_deref(), Some("m"));
+
+        let cli = Cli::try_parse_from(["codexSwitch"]).unwrap();
+        assert!(cli.command.is_none() && cli.provider.is_none());
+
+        let cli = Cli::try_parse_from(expand_provider_flags(
+            ["codexSwitch", "handoff", "abc", "-zai"].map(OsString::from),
+        ))
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Handoff { provider: Some(ref p), .. }) if p == "zai"
+        ));
+    }
 }

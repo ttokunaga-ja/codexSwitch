@@ -95,7 +95,7 @@ pub fn run(cfg: &Config, o: &Options) -> Result<()> {
         let launched = sidecar::set_active(cfg, p, m).and_then(|()| sidecar::launch(cfg));
         if let Err(e) = launched {
             eprintln!("  起動に失敗しました: {e:#}");
-            eprintln!("  手動で起動してください: codex-switch launch {}", p.name);
+            eprintln!("  手動で起動してください: codexSwitch -{}", p.name);
         }
     }
 
@@ -105,7 +105,7 @@ pub fn run(cfg: &Config, o: &Options) -> Result<()> {
     println!("  ID  : {new_id}");
     if !relaunch {
         println!(
-            "  第2インスタンスを再起動すると一覧に表示されます: codex-switch launch {}",
+            "  第2インスタンスを終了して起動し直すと、一覧に表示されます: codexSwitch -{}",
             plan.provider.name
         );
     }
