@@ -6,13 +6,6 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 
-/// How the sidecar is stopped, for messages. The Windows app does not quit on
-/// a close request (it keeps running in the background), so it is terminated.
-#[cfg(not(windows))]
-pub const QUIT_VERB: &str = "終了";
-#[cfg(windows)]
-pub const QUIT_VERB: &str = "強制終了";
-
 /// How to quit the app from its own UI. Closing the window is not enough on
 /// either OS: the app keeps running (on Windows, in the notification area).
 #[cfg(target_os = "macos")]
@@ -68,44 +61,22 @@ fn is_sidecar_main(exe_stem: Option<&str>, args: &[String], cfg: &Config) -> boo
         && args.iter().any(|a| a.replace('"', "") == flag)
 }
 
-/// Stops the sidecar and waits until no process of it is left. A failed
-/// request on one PID is not an error by itself: helpers often exit with the
-/// main process before they are asked. What counts is that nothing remains.
-pub fn quit(cfg: &Config, pids: &[Pid]) -> Result<()> {
-    let mut sys = System::new();
-    sys.refresh_processes_specifics(
-        ProcessesToUpdate::Some(pids),
-        true,
-        ProcessRefreshKind::nothing(),
-    );
-    for pid in pids {
-        if let Some(p) = sys.process(*pid) {
-            request_quit(p);
+/// Waits until the user has quit the sidecar from the app's own UI. The tool
+/// never stops it, so nothing running in it is cut off without the user.
+pub fn wait_for_quit(cfg: &Config, timeout: Duration) -> Result<()> {
+    let deadline = Instant::now() + timeout;
+    while !running(cfg).is_empty() {
+        if Instant::now() >= deadline {
+            bail!(
+                "第2インスタンスの終了を{}分以内に確認できなかったため、中止しました（何も変更していません）",
+                timeout.as_secs() / 60
+            );
         }
+        std::thread::sleep(Duration::from_millis(500));
     }
-    let deadline = Instant::now() + Duration::from_secs(20);
-    while Instant::now() < deadline {
-        if running(cfg).is_empty() {
-            // Give the app a moment to release its files.
-            std::thread::sleep(Duration::from_millis(500));
-            return Ok(());
-        }
-        std::thread::sleep(Duration::from_millis(300));
-    }
-    bail!("第2インスタンスが20秒以内に終了しませんでした。ウィンドウを閉じてから再実行してください")
-}
-
-/// macOS: a regular termination request; the app shuts down cleanly.
-#[cfg(unix)]
-fn request_quit(p: &sysinfo::Process) {
-    let _ = p.kill_with(sysinfo::Signal::Term);
-}
-
-/// Windows: a close request only hides the window, so terminate the main
-/// process. Its helper processes exit with it.
-#[cfg(windows)]
-fn request_quit(p: &sysinfo::Process) {
-    let _ = p.kill();
+    // Give the app a moment to release its files.
+    std::thread::sleep(Duration::from_millis(500));
+    Ok(())
 }
 
 pub fn ensure_key(p: &Provider) -> Result<()> {

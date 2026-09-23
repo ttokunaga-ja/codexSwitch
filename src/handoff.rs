@@ -12,6 +12,9 @@ use serde_json::json;
 use std::path::PathBuf;
 use std::time::Duration;
 
+/// How long to wait for the user to quit the sidecar before giving up.
+const QUIT_WAIT: Duration = Duration::from_secs(600);
+
 pub struct Options {
     pub query: String,
     pub provider: Option<String>,
@@ -72,11 +75,12 @@ pub fn run(cfg: &Config, o: &Options) -> Result<()> {
     }
 
     if relaunch && !running.is_empty() {
-        ui::step(&format!(
-            "第2インスタンスを{}しています",
-            sidecar::QUIT_VERB
-        ));
-        sidecar::quit(cfg, &running)?;
+        println!(
+            "\n第2インスタンスをアプリの画面から終了してください。終了を確認したら続けます（Ctrl+C で中止）。\n  終了のしかた: {}",
+            sidecar::QUIT_HOWTO
+        );
+        ui::step("第2インスタンスの終了を待っています");
+        sidecar::wait_for_quit(cfg, QUIT_WAIT)?;
     }
 
     let result = execute(cfg, &plan, relaunch, o.timeout);
@@ -184,13 +188,12 @@ fn print_plan(cfg: &Config, p: &Plan, running: &[sysinfo::Pid], relaunch: bool) 
     }
     let state = match (running.is_empty(), relaunch) {
         (false, true) => format!(
-            "起動中（PID {}）→ {}し、完了後に {} で起動します",
+            "起動中（PID {}）→ アプリの画面から終了してもらってから処理し、完了後に {} で起動します",
             running
                 .iter()
                 .map(|p| p.to_string())
                 .collect::<Vec<_>>()
                 .join(", "),
-            sidecar::QUIT_VERB,
             p.provider.name
         ),
         (true, true) => format!("停止中 → 完了後に {} で起動します", p.provider.name),
@@ -198,11 +201,6 @@ fn print_plan(cfg: &Config, p: &Plan, running: &[sysinfo::Pid], relaunch: bool) 
         (true, false) => "停止中のまま処理します（プロジェクト割り当ては行いません）".to_owned(),
     };
     println!("第2インスタンス: {state}");
-    if cfg!(windows) && !running.is_empty() && relaunch {
-        println!(
-            "               ※ Windows 版のアプリは通常の終了要求では閉じないため強制終了します。実行中の作業は中断されます"
-        );
-    }
 }
 
 fn execute(cfg: &Config, p: &Plan, assign_project: bool, timeout: Duration) -> Result<String> {

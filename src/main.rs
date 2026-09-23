@@ -34,8 +34,7 @@ use std::time::Duration;
         codexSwitch -zai            Z.ai で起動する\n  \
         codexSwitch -openrouter     OpenRouter で起動する\n  \
         codexSwitch handoff <会話>  本体の会話を引き継ぐ\n\n\
-        終了はアプリの画面から行います（起動中にプロバイダを変えるときも、先に終了します）。",
-    args_conflicts_with_subcommands = true
+        終了はアプリの画面から行います（起動中にプロバイダを変えるときも、先に終了します）。"
 )]
 struct Cli {
     /// 設定ファイル（既定: ~/.config/codex-switch/config.toml）
@@ -72,7 +71,7 @@ enum Command {
         /// 確認を省略する
         #[arg(short, long)]
         yes: bool,
-        /// 第2インスタンスを終了・再起動しない（プロジェクト割り当ても行わない）
+        /// 第2インスタンスの終了を待たず、再起動もしない（プロジェクト割り当ても行わない）
         #[arg(long)]
         no_relaunch: bool,
         /// 実行内容を表示するだけで何もしない
@@ -151,6 +150,13 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: Cli) -> Result<()> {
+    // clap's args_conflicts_with_subcommands would also reject the global
+    // --config, so the launch-only options are checked here.
+    if cli.command.is_some() && (cli.provider.is_some() || cli.model.is_some()) {
+        bail!(
+            "プロバイダとモデルは、サブコマンドの後に書いてください（例: codexSwitch handoff <会話> -zai）"
+        );
+    }
     let cfg = Config::load(cli.config.as_deref())?;
     match cli.command {
         None => launch(&cfg, cli.provider, cli.model),
@@ -346,5 +352,25 @@ mod tests {
             cli.command,
             Some(Command::Handoff { provider: Some(ref p), .. }) if p == "zai"
         ));
+    }
+
+    #[test]
+    fn config_goes_with_every_form() {
+        let parse = |args: &[&str]| {
+            Cli::try_parse_from(expand_provider_flags(args.iter().map(OsString::from))).unwrap()
+        };
+        let cli = parse(&[
+            "codexSwitch",
+            "--config",
+            "c.toml",
+            "handoff",
+            "abc",
+            "-zai",
+        ]);
+        assert!(cli.config.is_some() && matches!(cli.command, Some(Command::Handoff { .. })));
+        let cli = parse(&["codexSwitch", "--config", "c.toml", "status"]);
+        assert!(cli.config.is_some() && matches!(cli.command, Some(Command::Status)));
+        let cli = parse(&["codexSwitch", "--config", "c.toml", "-zai"]);
+        assert!(cli.config.is_some() && cli.provider.as_deref() == Some("zai"));
     }
 }

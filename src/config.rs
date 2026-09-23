@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// Markers around the block this tool rewrites in the sidecar's config.toml.
-/// Kept identical to the original `codex-or` shell launcher so both interoperate.
+/// Named after the original `codex-or` launcher; kept so existing configs work.
 pub const MANAGED_BEGIN: &str = "# >>> codex-or managed: active provider >>>";
 pub const MANAGED_END: &str = "# <<< codex-or managed: active provider <<<";
 
