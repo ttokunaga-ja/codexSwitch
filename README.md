@@ -30,7 +30,9 @@ Codex は `CODEX_HOME` ごとに**プロバイダを1つしか持てず**、ア�
 
 ## 必要なもの
 
-- macOS と Codex アプリ（`/Applications/ChatGPT.app`）
+- Codex アプリ
+  - macOS: `/Applications/ChatGPT.app`
+  - Windows: Microsoft Store 版（MSIX パッケージ `OpenAI.Codex`）
 - Rust（ビルドする場合）
 - 第2インスタンス用の設定（下記）
 
@@ -79,6 +81,14 @@ args = ["/Users/you/.codex/openrouter.key"]
 
 - `requires_openai_auth = false` で、第2インスタンスは ChatGPT へのサインインなしで動きます
 - `auth.args` のパスは**絶対パス**で書いてください（`~` は展開されません）
+- **Windows** では設定の置き場所が `%USERPROFILE%\.codex-or\config.toml`、キーは `%USERPROFILE%\.codex\*.key` です。キーの読み取りは `cmd /c type` を使います。バックスラッシュをそのまま書けるよう、TOML のリテラル文字列（`'...'`）にします
+
+  ```toml
+  [model_providers.openrouter.auth]
+  command = 'C:\Windows\System32\cmd.exe'
+  args = ['/c', 'type', 'C:\Users\you\.codex\openrouter.key']
+  ```
+
 - Z.ai は Codex 用のエンドポイント `https://api.z.ai/api/v1` を使います。Claude Code 用や OpenCode 用とは別です
 
 ### 3. モデルカタログを置く
@@ -92,15 +102,50 @@ args = ["/Users/you/.codex/openrouter.key"]
     -H "authorization: Bearer $(cat ~/.codex/zai.key)" > ~/.codex-or/zai_models.json
   ```
 
-- **OpenRouter**：`codex debug models` の出力から1件を複製し、`slug`・`display_name`・`context_window`・`input_modalities` などを書き換えて作ります
+- **OpenRouter**：自分で書きます。1モデルにつき次の形です
+
+  ```json
+  {"models": [{
+    "slug": "nex-agi/nex-n2.5-pro:free",
+    "display_name": "Nex N2.5 Pro (free)",
+    "description": "Vision + computer use",
+    "priority": 1,
+    "visibility": "list",
+    "context_window": 262144,
+    "max_context_window": 262144,
+    "input_modalities": ["text", "image"],
+    "default_reasoning_level": "low",
+    "supported_reasoning_levels": [
+      {"effort": "low", "description": "Light reasoning"},
+      {"effort": "medium", "description": "Balanced reasoning"},
+      {"effort": "high", "description": "Enhanced reasoning"}],
+    "default_reasoning_summary": "none",
+    "base_instructions": "",
+    "shell_type": "shell_command",
+    "apply_patch_tool_type": "freeform",
+    "effective_context_window_percent": 95,
+    "experimental_supported_tools": [],
+    "support_verbosity": false,
+    "supported_in_api": true,
+    "supports_parallel_tool_calls": true,
+    "supports_reasoning_summaries": true,
+    "truncation_policy": {"limit": 10000, "mode": "bytes"}
+  }]}
+  ```
+
+  > **`codex debug models` の出力（OpenAI のモデルの定義）を複製して作らないでください。** OpenAI のモデル用の `"tool_mode": "code_mode_only"` が含まれていて、新しい版の codex はこれに従ってツールを JavaScript 実行用の入れ物（namespace）にまとめて送ります。OpenAI 以外のモデルはこの形を受け付けず、`tools[0].function: missing field 'parameters'` のようなエラーで止まります。上の形は Z.ai が配信している Codex 向けカタログに合わせたものです
 
 ## インストール
+
+macOS:
 
 ```sh
 git clone https://github.com/ttokunaga-ja/codexSwitch.git
 cd codexSwitch
 ./install.sh            # ~/.local/bin/codex-switch に入ります
 ```
+
+Windows: MSVC 版の Rust（`stable-x86_64-pc-windows-msvc`）で `cargo build --release` するか、GitHub Actions の成果物（`codex-switch-Windows`）を使ってください。
 
 ## 使い方
 
@@ -215,6 +260,7 @@ key_file = "~/.codex/openrouter.key"
 - 第2インスタンスを終了すると、そこで実行中の作業は止まります
 - 引き継いだ会話は、第2インスタンスへコピーした**元の会話ファイルを参照**しています。`~/.codex-or/sessions/` 以下のコピーは消さないでください
 - Z.ai などの別プロバイダの会話を、**本体アプリ**に表示することはできません。本体アプリは自分のプロバイダの会話しか並べないためです
+- 最初のメッセージは読み取り専用で実行します。macOS ではファイルの書き込みが拒否されること、Windows ではコマンドの起動が拒否されること（codex の Windows 用サンドボックスによる）を実機で確認しています
 - API キーは設定ファイルに書かず、キーファイルから読み込みます
 
 ## 対応環境
@@ -222,9 +268,32 @@ key_file = "~/.codex/openrouter.key"
 | OS | 状態 |
 | --- | --- |
 | macOS | 動作確認済み |
-| Windows | 未対応。会話のコピーや引き継ぎの処理自体は共通ですが、2つ目のインスタンスの起動を確認できていません（Windows 版のアプリは MSIX で配布されています） |
+| Windows | 対応。部品ごとに実機で確認済み（下記） |
 
-動作確認した環境: macOS 27.0 / Codex アプリ 26.915.31945（同梱 codex-cli 0.155.0-alpha.9.2）/ Rust 1.95
+動作確認した環境:
+
+- macOS 27.0 / Codex アプリ 26.915.31945（同梱 codex-cli 0.155.0-alpha.9.2）/ Rust 1.95
+- Windows 11 Pro 25H2 / Codex アプリ 26.917.8451.0（同梱 codex-cli 0.155.0-alpha.16.3）
+
+### Windows での仕組みと注意
+
+Windows 版のアプリは MSIX パッケージなので、macOS とは次の点が違います。
+
+- **起動**：パッケージには実行エイリアスがないため、`Invoke-CommandInDesktopPackage` でパッケージの中で `cmd.exe` を動かし、そこで環境変数を設定してから `ChatGPT.exe` を起動します
+- **codex の実行ファイル**：パッケージ内の `codex.exe` は外から実行できない（Access is denied）ため、アプリの版ごとに `%LOCALAPPDATA%\codex-switch\` へ複製して使います（初回のみ約300MB）
+- **終了**：Windows 版のアプリは通常の終了要求では閉じず、バックグラウンドに残ります。そのため確認のうえ**強制終了**します。第2インスタンスで実行中の作業は中断されます
+- **実行する場所**：サインイン中のデスクトップのターミナルから実行してください。SSH などから実行すると、アプリは起動しても画面に表示されません
+- **スマート アプリ コントロール**：オンの環境では、署名のない `codex-switch.exe` が Windows によって止められることがあります（終了コード 4551）。判定はファイルごとのため、版によって通ったり止められたりします
+
+Windows の実機で確認したこと:
+
+- ビルド・静的解析・ユニットテスト（GitHub Actions の Windows 環境）
+- 状態表示、アプリのパッケージ検出、codex.exe の初回複製
+- 会話のコピー、フォーク、名前付け、最初のメッセージの送信、失敗時の再起動
+- 2つ目のインスタンスの起動（本体のアプリには影響しない）、強制終了で補助プロセスも含めて終了すること
+- 読み取り専用の最初のメッセージでコマンドが起動されず、ファイルも作られないこと
+
+スマート アプリ コントロールに止められたため、最終版の `codex-switch.exe` での通し実行（最初のメッセージの完了からプロジェクト割り当て、強制終了を経た再起動まで）は未確認です
 
 ## ライセンス
 
