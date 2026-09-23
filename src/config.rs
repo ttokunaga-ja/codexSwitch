@@ -93,6 +93,19 @@ pub fn expand(p: &str) -> PathBuf {
     PathBuf::from(p)
 }
 
+/// Drops the Windows extended-length prefix (`\\?\C:\...`, `\\?\UNC\...`).
+/// Codex on Windows records working directories in this form, while the app
+/// stores project roots without it.
+pub fn strip_verbatim(path: &str) -> std::borrow::Cow<'_, str> {
+    if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
+        std::borrow::Cow::Owned(format!(r"\\{rest}"))
+    } else if let Some(rest) = path.strip_prefix(r"\\?\") {
+        std::borrow::Cow::Borrowed(rest)
+    } else {
+        std::borrow::Cow::Borrowed(path)
+    }
+}
+
 pub fn default_config_path() -> PathBuf {
     match std::env::var("CODEX_SWITCH_CONFIG") {
         Ok(p) if !p.is_empty() => expand(&p),
@@ -227,5 +240,18 @@ fn default_app_path() -> PathBuf {
     #[cfg(not(target_os = "macos"))]
     {
         PathBuf::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strips_windows_extended_length_prefix() {
+        assert_eq!(strip_verbatim(r"\\?\C:\Users\x"), r"C:\Users\x");
+        assert_eq!(strip_verbatim(r"\\?\UNC\server\share"), r"\\server\share");
+        assert_eq!(strip_verbatim(r"C:\Users\x"), r"C:\Users\x");
+        assert_eq!(strip_verbatim("/home/x"), "/home/x");
     }
 }

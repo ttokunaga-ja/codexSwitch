@@ -86,7 +86,7 @@ fn match_project_in(state: &Value, cwd: &str, windows: bool) -> Option<(String, 
 fn normalize(path: &str, windows: bool) -> String {
     let sep = if windows { '\\' } else { '/' };
     let p = if windows {
-        path.replace('/', "\\").to_lowercase()
+        crate::config::strip_verbatim(&path.replace('/', "\\")).to_lowercase()
     } else {
         path.to_owned()
     };
@@ -155,5 +155,10 @@ mod tests {
         );
         assert_eq!(hit("C:\\Users\\RM2C\\dev\\sho").as_deref(), Some("sho"));
         assert_eq!(hit("C:\\Users\\RM2C\\dev\\other"), None);
+        // Codex records cwd with the extended-length prefix.
+        assert_eq!(
+            hit("\\\\?\\C:\\Users\\RM2C\\dev\\shop\\src").as_deref(),
+            Some("shop")
+        );
     }
 }

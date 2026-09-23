@@ -24,10 +24,11 @@ pub fn confirm(prompt: &str) -> Result<bool> {
 /// Shows paths under the home directory as `~/...`.
 pub fn tilde(path: &Path) -> String {
     let home = crate::config::home();
-    match path.strip_prefix(&home) {
+    let shown = crate::config::strip_verbatim(&path.to_string_lossy()).into_owned();
+    match Path::new(&shown).strip_prefix(&home) {
         Ok(rest) if rest.as_os_str().is_empty() => "~".to_owned(),
-        Ok(rest) => format!("~/{}", rest.display()),
-        Err(_) => path.display().to_string(),
+        Ok(rest) => format!("~{}{}", std::path::MAIN_SEPARATOR, rest.display()),
+        Err(_) => shown,
     }
 }
 

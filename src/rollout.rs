@@ -116,6 +116,10 @@ fn relative(path: &Path, base: &Path, windows: bool) -> Option<PathBuf> {
         return None;
     }
     let (p, b) = (path.to_string_lossy(), base.to_string_lossy());
+    let (p, b) = (
+        crate::config::strip_verbatim(&p).into_owned(),
+        crate::config::strip_verbatim(&b).into_owned(),
+    );
     let b = b.trim_end_matches(['\\', '/']);
     let head = p.get(..b.len())?;
     let rest = p.get(b.len()..)?;
@@ -168,6 +172,15 @@ mod tests {
                 true
             ),
             None
+        );
+        // Codex may record paths with the extended-length prefix.
+        assert_eq!(
+            rel(
+                "\\\\?\\C:\\Users\\RM2C\\.codex\\a.jsonl",
+                "C:\\Users\\RM2C\\.codex",
+                true
+            ),
+            Some(PathBuf::from("a.jsonl"))
         );
     }
 }
