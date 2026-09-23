@@ -1,0 +1,28 @@
+[package]
+name = "codex-switch"
+version = "0.1.0"
+edition = "2024"
+description = "Run a second Codex app instance on another model provider and hand conversations over to it (unofficial)"
+license = "MIT"
+repository = "https://github.com/ttokunaga-ja/codexSwitch"
+readme = "README.md"
+keywords = ["codex", "openrouter", "cli"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+anyhow = "1.0.104"
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
+clap = { version = "4.6.7", features = ["derive"] }
+dirs = "7.0.0"
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.151", features = ["preserve_order"] }
+sha2 = "0.11.0"
+sysinfo = "0.39.6"
+toml = "1.1.6"
+
+[target."cfg(unix)".dependencies]
+libc = "0.2.189"
+
+[profile.release]
+strip = true
