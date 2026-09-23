@@ -10,9 +10,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// Markers around the block this tool rewrites in the sidecar's config.toml.
-/// Named after the original `codex-or` launcher; kept so existing configs work.
-pub const MANAGED_BEGIN: &str = "# >>> codex-or managed: active provider >>>";
-pub const MANAGED_END: &str = "# <<< codex-or managed: active provider <<<";
+pub const MANAGED_BEGIN: &str = "# >>> codexSwitch managed: active provider >>>";
+pub const MANAGED_END: &str = "# <<< codexSwitch managed: active provider <<<";
 
 #[derive(Debug, Clone)]
 pub struct Provider {
@@ -128,7 +127,8 @@ impl Config {
         };
 
         let source_home = opt_path(file.source_home).unwrap_or_else(|| home().join(".codex"));
-        let sidecar_home = opt_path(file.sidecar_home).unwrap_or_else(|| home().join(".codex-or"));
+        let sidecar_home =
+            opt_path(file.sidecar_home).unwrap_or_else(|| home().join(".codex-switch"));
         let user_data_dir = opt_path(file.user_data_dir).unwrap_or_else(default_user_data_dir);
         let app_path = opt_path(file.app_path).unwrap_or_else(default_app_path);
         let app_process_name = file
@@ -219,7 +219,7 @@ fn default_providers(sidecar: &Path) -> BTreeMap<String, Provider> {
 fn default_user_data_dir() -> PathBuf {
     #[cfg(target_os = "macos")]
     {
-        home().join("Library/Application Support/Codex OpenRouter/user-data")
+        home().join("Library/Application Support/codex-switch/user-data")
     }
     // No spaces: the path travels through cmd.exe and a command-line switch.
     #[cfg(not(target_os = "macos"))]

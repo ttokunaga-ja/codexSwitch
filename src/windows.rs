@@ -222,11 +222,11 @@ mod tests {
             "OpenAI.Codex_2p2nqsd0c76g0",
             "App",
             &PathBuf::from("C:\\Program Files\\WindowsApps\\OpenAI.Codex_1.0_x64__x"),
-            &PathBuf::from("C:\\Users\\a b\\.codex-or"),
+            &PathBuf::from("C:\\Users\\a b\\.codex-switch"),
             &PathBuf::from("C:\\Users\\a b\\AppData\\Local\\codex-switch\\user-data"),
         );
         assert!(s.contains("-PackageFamilyName 'OpenAI.Codex_2p2nqsd0c76g0' -AppId 'App'"));
-        assert!(s.contains("set \"CODEX_HOME=C:\\Users\\a b\\.codex-or\""));
+        assert!(s.contains("set \"CODEX_HOME=C:\\Users\\a b\\.codex-switch\""));
         assert!(s.contains(
             "set \"CODEX_ELECTRON_USER_DATA_PATH=C:\\Users\\a b\\AppData\\Local\\codex-switch\\user-data\""
         ));

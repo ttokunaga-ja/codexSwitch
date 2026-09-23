@@ -22,8 +22,8 @@ macOS と Windows で同じコマンドです。
 本体の Codex アプリ（ChatGPT アカウントの OpenAI モデル）には一切手を加えず、その横で別プロバイダ用のアプリを並べて使えます。
 
 ```text
-~/.codex      → 本体アプリ（ChatGPT / OpenAI）   ← 触らない
-~/.codex-or   → 第2インスタンス（Z.ai / OpenRouter）
+~/.codex        → 本体アプリ（ChatGPT / OpenAI）   ← 触らない
+~/.codex-switch → 第2インスタンス（Z.ai / OpenRouter）
 ```
 
 ## 仕組み
@@ -52,15 +52,15 @@ chmod 600 ~/.codex/zai.key ~/.codex/openrouter.key
 
 ### 2. 第2インスタンスの設定を作る
 
-`~/.codex-or/config.toml` を作ります。先頭の**管理ブロック**（2つのコメント行で囲んだ部分）は、このツールが書き換えます。
+`~/.codex-switch/config.toml` を作ります。先頭の**管理ブロック**（2つのコメント行で囲んだ部分）は、このツールが書き換えます。
 
 ```toml
-# >>> codex-or managed: active provider >>>
+# >>> codexSwitch managed: active provider >>>
 model_provider = "zai"
 model = "glm-5.3-flash"
-model_catalog_json = "/Users/you/.codex-or/zai_models.json"
+model_catalog_json = "/Users/you/.codex-switch/zai_models.json"
 model_reasoning_effort = "high"
-# <<< codex-or managed: active provider <<<
+# <<< codexSwitch managed: active provider <<<
 
 [model_providers.zai]
 name = "Z.ai Coding Plan"
@@ -85,7 +85,7 @@ args = ["/Users/you/.codex/openrouter.key"]
 
 - `requires_openai_auth = false` で、第2インスタンスは ChatGPT へのサインインなしで動きます
 - `auth.args` のパスは**絶対パス**で書いてください（`~` は展開されません）
-- **Windows** では設定の置き場所が `%USERPROFILE%\.codex-or\config.toml`、キーは `%USERPROFILE%\.codex\*.key` です。キーの読み取りは `cmd /c type` を使います。バックスラッシュをそのまま書けるよう、TOML のリテラル文字列（`'...'`）にします
+- **Windows** では設定の置き場所が `%USERPROFILE%\.codex-switch\config.toml`、キーは `%USERPROFILE%\.codex\*.key` です。キーの読み取りは `cmd /c type` を使います。バックスラッシュをそのまま書けるよう、TOML のリテラル文字列（`'...'`）にします
 
   ```toml
   [model_providers.openrouter.auth]
@@ -103,7 +103,7 @@ args = ["/Users/you/.codex/openrouter.key"]
 
   ```sh
   curl -s https://api.z.ai/api/v1/models \
-    -H "authorization: Bearer $(cat ~/.codex/zai.key)" > ~/.codex-or/zai_models.json
+    -H "authorization: Bearer $(cat ~/.codex/zai.key)" > ~/.codex-switch/zai_models.json
   ```
 
 - **OpenRouter**：自分で書きます。1モデルにつき次の形です
@@ -175,7 +175,7 @@ $ codexSwitch status
   zai         glm-5.3-flash                  キー ✓  カタログ ✓
 codex           : /Applications/ChatGPT.app/Contents/Resources/codex (codex-cli 0.155.0-alpha.9.2)
 本体のホーム    : ~/.codex
-第2のホーム     : ~/.codex-or
+第2のホーム     : ~/.codex-switch
 ```
 
 ### 起動する
@@ -221,7 +221,7 @@ codexSwitch handoff 0199aaaa-bbbb-7ccc-8ddd-eeeeffff0000 --dry-run
 引き継ぎ元   : ログイン画面のバリデーションを修正
                gpt-6-astra / openai / ~/dev/example-app
                id 0199aaaa-bbbb-7ccc-8ddd-eeeeffff0000
-引き継ぎ先   : 第2インスタンス（~/.codex-or）/ zai / glm-5.3-flash
+引き継ぎ先   : 第2インスタンス（~/.codex-switch）/ zai / glm-5.3-flash
 新しい名前   : ログイン画面のバリデーションを修正（glm-5.3-flash）
 コピー       : 会話ファイル 1 件（138.4 MB）
 最初のメッセージ（読み取り専用で実行）:
@@ -273,15 +273,15 @@ codexSwitch handoff 0199aaaa-bbbb-7ccc-8ddd-eeeeffff0000 --dry-run
 
 ```toml
 source_home   = "~/.codex"
-sidecar_home  = "~/.codex-or"
-user_data_dir = "~/Library/Application Support/Codex OpenRouter/user-data"
+sidecar_home  = "~/.codex-switch"
+user_data_dir = "~/Library/Application Support/codex-switch/user-data"
 app_path      = "/Applications/ChatGPT.app"
 # codex_bin   = "codex"   # 既定はアプリ同梱の codex
 
 [providers.openrouter]
 label    = "OpenRouter"
 model    = "nvidia/nemotron-3-ultra-550b-a55b:free"
-catalog  = "~/.codex-or/model_catalog.json"
+catalog  = "~/.codex-switch/model_catalog.json"
 effort   = "low"
 key_file = "~/.codex/openrouter.key"
 ```
@@ -296,7 +296,7 @@ Windows のスクリプト版はこの設定ファイルを読まず、既定値
 - `app-server` は Codex CLI で `[experimental]` と表示される機能です
 - プロジェクトの割り当ては、アプリが止まっている間にだけ行います。起動中のアプリはこのファイルを丸ごと書き直すためです。書き換える前に `.codex-global-state.json.codex-switch.bak` へバックアップします
 - 第2インスタンスを終了すると、そこで実行中の作業は止まります
-- 引き継いだ会話は、第2インスタンスへコピーした**元の会話ファイルを参照**しています。`~/.codex-or/sessions/` 以下のコピーは消さないでください
+- 引き継いだ会話は、第2インスタンスへコピーした**元の会話ファイルを参照**しています。`~/.codex-switch/sessions/` 以下のコピーは消さないでください
 - Z.ai などの別プロバイダの会話を、**本体アプリ**に表示することはできません。本体アプリは自分のプロバイダの会話しか並べないためです
 - 最初のメッセージは読み取り専用で実行します。macOS ではファイルの書き込みが拒否されること、Windows ではコマンドの起動が拒否されること（codex の Windows 用サンドボックスによる）を実機で確認しています
 - API キーは設定ファイルに書かず、キーファイルから読み込みます

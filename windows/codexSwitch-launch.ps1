@@ -11,15 +11,15 @@
 # 設定ファイル（~/.config/codex-switch/config.toml）は読まず、既定値で動く。
 $ErrorActionPreference = 'Stop'
 
-$sidecarHome = Join-Path $env:USERPROFILE '.codex-or'
+$sidecarHome = Join-Path $env:USERPROFILE '.codex-switch'
 $userData = Join-Path $env:LOCALAPPDATA 'codex-switch\user-data'
 $config = Join-Path $sidecarHome 'config.toml'
 $providers = [ordered]@{
   openrouter = @{ Model = 'nex-agi/nex-n2.5-pro:free'; Catalog = 'model_catalog.json'; Effort = 'low';  Key = 'openrouter.key' }
   zai        = @{ Model = 'glm-5.3-flash';             Catalog = 'zai_models.json';    Effort = 'high'; Key = 'zai.key' }
 }
-$managedBegin = '# >>> codex-or managed: active provider >>>'
-$managedEnd = '# <<< codex-or managed: active provider <<<'
+$managedBegin = '# >>> codexSwitch managed: active provider >>>'
+$managedEnd = '# <<< codexSwitch managed: active provider <<<'
 $quitHowto = 'タスクバーの通知領域にある第2インスタンスのアイコンを右クリックし、' +
   '一番下の「Exit」を選ぶ（×ボタンで閉じても、通知領域で動き続けます）'
 
