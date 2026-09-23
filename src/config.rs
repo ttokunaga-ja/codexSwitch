@@ -37,9 +37,19 @@ pub struct Config {
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub app_path: PathBuf,
     /// File stem of the app's main executable, used to find the running sidecar.
+    /// `ChatGPT` on both macOS and Windows.
     pub app_process_name: String,
-    /// `codex` binary used to talk to the sidecar's app-server.
-    pub codex_bin: PathBuf,
+    /// `codex` binary for the sidecar's app-server. When unset, it is chosen per
+    /// platform (see `sidecar::codex_bin`).
+    pub codex_bin: Option<PathBuf>,
+    /// Windows: the app's MSIX package name and its application id.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    pub windows_package: String,
+    #[cfg_attr(not(windows), allow(dead_code))]
+    pub windows_app_id: String,
+    /// Windows: where the copy of the package's `codex.exe` is kept.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    pub cache_dir: PathBuf,
     pub providers: BTreeMap<String, Provider>,
 }
 
@@ -52,6 +62,8 @@ struct FileConfig {
     app_path: Option<String>,
     app_process_name: Option<String>,
     codex_bin: Option<String>,
+    windows_package: Option<String>,
+    windows_app_id: Option<String>,
     #[serde(default)]
     providers: BTreeMap<String, FileProvider>,
 }
@@ -109,7 +121,11 @@ impl Config {
         let app_process_name = file
             .app_process_name
             .unwrap_or_else(|| "ChatGPT".to_owned());
-        let codex_bin = opt_path(file.codex_bin).unwrap_or_else(|| default_codex_bin(&app_path));
+        let codex_bin = opt_path(file.codex_bin);
+        let windows_package = file
+            .windows_package
+            .unwrap_or_else(|| "OpenAI.Codex".to_owned());
+        let windows_app_id = file.windows_app_id.unwrap_or_else(|| "App".to_owned());
 
         let mut providers = default_providers(&sidecar_home);
         for (name, p) in file.providers {
@@ -133,6 +149,9 @@ impl Config {
             app_path,
             app_process_name,
             codex_bin,
+            windows_package,
+            windows_app_id,
+            cache_dir: local_data_dir().join("codex-switch"),
             providers,
         })
     }
@@ -189,13 +208,15 @@ fn default_user_data_dir() -> PathBuf {
     {
         home().join("Library/Application Support/Codex OpenRouter/user-data")
     }
+    // No spaces: the path travels through cmd.exe and a command-line switch.
     #[cfg(not(target_os = "macos"))]
     {
-        dirs::config_dir()
-            .unwrap_or_else(home)
-            .join("Codex OpenRouter")
-            .join("user-data")
+        local_data_dir().join("codex-switch").join("user-data")
     }
+}
+
+fn local_data_dir() -> PathBuf {
+    dirs::data_local_dir().unwrap_or_else(home)
 }
 
 fn default_app_path() -> PathBuf {
@@ -206,16 +227,5 @@ fn default_app_path() -> PathBuf {
     #[cfg(not(target_os = "macos"))]
     {
         PathBuf::new()
-    }
-}
-
-/// Prefer the `codex` bundled with the app, so the sidecar's state is written
-/// by the same version the GUI reads it with.
-fn default_codex_bin(app: &Path) -> PathBuf {
-    let bundled = app.join("Contents/Resources/codex");
-    if bundled.is_file() {
-        bundled
-    } else {
-        PathBuf::from("codex")
     }
 }

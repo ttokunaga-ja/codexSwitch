@@ -81,7 +81,7 @@ pub enum Copied {
 /// Copies `path` (inside `src_home`) to the same relative location in
 /// `dst_home`, verifying the result by hash. An identical existing file is kept.
 pub fn copy_into(src_home: &Path, dst_home: &Path, path: &Path) -> Result<Copied> {
-    let rel = path.strip_prefix(src_home).with_context(|| {
+    let rel = relative(path, src_home, cfg!(windows)).with_context(|| {
         format!(
             "会話ファイルが {} の外にあります: {}",
             src_home.display(),
@@ -106,6 +106,23 @@ pub fn copy_into(src_home: &Path, dst_home: &Path, path: &Path) -> Result<Copied
     Ok(Copied::Copied)
 }
 
+/// `path` relative to `base`. Windows paths are case-insensitive, and the
+/// thread database and the configuration may spell the home differently.
+fn relative(path: &Path, base: &Path, windows: bool) -> Option<PathBuf> {
+    if let Ok(rel) = path.strip_prefix(base) {
+        return Some(rel.to_path_buf());
+    }
+    if !windows {
+        return None;
+    }
+    let (p, b) = (path.to_string_lossy(), base.to_string_lossy());
+    let b = b.trim_end_matches(['\\', '/']);
+    let head = p.get(..b.len())?;
+    let rest = p.get(b.len()..)?;
+    (head.eq_ignore_ascii_case(b) && rest.starts_with(['\\', '/']))
+        .then(|| PathBuf::from(&rest[1..]))
+}
+
 fn sha256(path: &Path) -> Result<Vec<u8>> {
     let mut file = File::open(path)?;
     let mut hasher = Sha256::new();
@@ -118,4 +135,39 @@ fn sha256(path: &Path) -> Result<Vec<u8>> {
         hasher.update(&buf[..n]);
     }
     Ok(hasher.finalize().to_vec())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn relative_paths() {
+        let rel = |p: &str, b: &str, w| relative(Path::new(p), Path::new(b), w);
+        assert_eq!(
+            rel("/home/u/.codex/sessions/a.jsonl", "/home/u/.codex", false),
+            Some(PathBuf::from("sessions/a.jsonl"))
+        );
+        assert_eq!(
+            rel("/home/u/.codex2/a.jsonl", "/home/u/.codex", false),
+            None
+        );
+        // Windows: case-insensitive, whole components only.
+        assert_eq!(
+            rel(
+                "c:\\users\\rm2c\\.codex\\sessions\\a.jsonl",
+                "C:\\Users\\RM2C\\.codex",
+                true
+            ),
+            Some(PathBuf::from("sessions\\a.jsonl"))
+        );
+        assert_eq!(
+            rel(
+                "C:\\Users\\RM2C\\.codex2\\a.jsonl",
+                "C:\\Users\\RM2C\\.codex",
+                true
+            ),
+            None
+        );
+    }
 }

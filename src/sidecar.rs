@@ -2,9 +2,16 @@
 
 use crate::config::{Config, MANAGED_BEGIN, MANAGED_END, Provider};
 use anyhow::{Context, Result, bail};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
-use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, Signal, System, UpdateKind};
+use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+
+/// How the sidecar is stopped, for messages. The Windows app does not quit on
+/// a close request (it keeps running in the background), so it is terminated.
+#[cfg(not(windows))]
+pub const QUIT_VERB: &str = "終了";
+#[cfg(windows)]
+pub const QUIT_VERB: &str = "強制終了";
 
 /// Main-process PIDs of the running sidecar. Helper processes (GPU, network,
 /// crashpad) carry the same `--user-data-dir` but a different executable.
@@ -26,15 +33,17 @@ pub fn running(cfg: &Config) -> Vec<Pid> {
                 .and_then(Path::file_stem)
                 .or_else(|| p.cmd().first().and_then(|a| Path::new(a).file_stem()))
                 .map(|s| s.to_string_lossy().into_owned());
+            // On Windows the switch is passed quoted; compare without quotes.
             stem.as_deref() == Some(cfg.app_process_name.as_str())
-                && p.cmd().iter().any(|a| a.to_string_lossy() == flag)
+                && p.cmd()
+                    .iter()
+                    .any(|a| a.to_string_lossy().replace('"', "") == flag)
         })
         .map(|p| p.pid())
         .collect()
 }
 
-/// Asks the sidecar to terminate and waits for it. Never force-kills: if it
-/// does not exit, the user is told to close it instead.
+/// Stops the sidecar and waits for it to exit.
 pub fn quit(cfg: &Config, pids: &[Pid]) -> Result<()> {
     let mut sys = System::new();
     sys.refresh_processes_specifics(
@@ -44,13 +53,7 @@ pub fn quit(cfg: &Config, pids: &[Pid]) -> Result<()> {
     );
     for pid in pids {
         if let Some(p) = sys.process(*pid) {
-            match p.kill_with(Signal::Term) {
-                Some(true) => {}
-                Some(false) => bail!("第2インスタンス（PID {pid}）に終了を要求できませんでした"),
-                None => bail!(
-                    "この OS では第2インスタンスの自動終了に対応していません。手動で閉じてください"
-                ),
-            }
+            request_quit(p)?;
         }
     }
     let deadline = Instant::now() + Duration::from_secs(20);
@@ -63,6 +66,28 @@ pub fn quit(cfg: &Config, pids: &[Pid]) -> Result<()> {
         std::thread::sleep(Duration::from_millis(300));
     }
     bail!("第2インスタンスが20秒以内に終了しませんでした。ウィンドウを閉じてから再実行してください")
+}
+
+/// macOS: a regular termination request; the app shuts down cleanly.
+#[cfg(unix)]
+fn request_quit(p: &sysinfo::Process) -> Result<()> {
+    match p.kill_with(sysinfo::Signal::Term) {
+        Some(true) => Ok(()),
+        _ => bail!(
+            "第2インスタンス（PID {}）に終了を要求できませんでした",
+            p.pid()
+        ),
+    }
+}
+
+/// Windows: a close request only hides the window, so terminate the main
+/// process. Its helper processes exit with it.
+#[cfg(windows)]
+fn request_quit(p: &sysinfo::Process) -> Result<()> {
+    if !p.kill() {
+        bail!("第2インスタンス（PID {}）を終了できませんでした", p.pid());
+    }
+    Ok(())
 }
 
 pub fn ensure_key(p: &Provider) -> Result<()> {
@@ -128,36 +153,90 @@ pub fn set_active(cfg: &Config, p: &Provider, model: &str) -> Result<()> {
     Ok(())
 }
 
+/// Starts the sidecar and waits until it is actually running: both launchers
+/// return before the app is up.
 pub fn launch(cfg: &Config) -> Result<()> {
     std::fs::create_dir_all(&cfg.user_data_dir)?;
-    #[cfg(target_os = "macos")]
-    {
-        let status = std::process::Command::new("/usr/bin/open")
-            .arg("-n")
-            .arg("--env")
-            .arg(format!("CODEX_HOME={}", cfg.sidecar_home.display()))
-            .arg("--env")
-            .arg(format!(
-                "CODEX_ELECTRON_USER_DATA_PATH={}",
-                cfg.user_data_dir.display()
-            ))
-            .arg(&cfg.app_path)
-            .arg("--args")
-            .arg(format!("--user-data-dir={}", cfg.user_data_dir.display()))
-            .status()
-            .context("open コマンドを実行できません")?;
-        if !status.success() {
-            bail!("アプリを起動できませんでした（open: {status}）");
+    start(cfg)?;
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while Instant::now() < deadline {
+        if !running(cfg).is_empty() {
+            return Ok(());
         }
-        Ok(())
+        std::thread::sleep(Duration::from_millis(500));
     }
-    #[cfg(not(target_os = "macos"))]
-    {
-        bail!(
-            "この OS での第2インスタンスの起動は未検証のため未対応です。\
-             --no-relaunch を付けて実行し、アプリは手動で起動してください"
-        )
+    bail!("第2インスタンスの起動を30秒以内に確認できませんでした")
+}
+
+#[cfg(target_os = "macos")]
+fn start(cfg: &Config) -> Result<()> {
+    let status = std::process::Command::new("/usr/bin/open")
+        .arg("-n")
+        .arg("--env")
+        .arg(format!("CODEX_HOME={}", cfg.sidecar_home.display()))
+        .arg("--env")
+        .arg(format!(
+            "CODEX_ELECTRON_USER_DATA_PATH={}",
+            cfg.user_data_dir.display()
+        ))
+        .arg(&cfg.app_path)
+        .arg("--args")
+        .arg(format!("--user-data-dir={}", cfg.user_data_dir.display()))
+        .status()
+        .context("open コマンドを実行できません")?;
+    if !status.success() {
+        bail!("アプリを起動できませんでした（open: {status}）");
     }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn start(cfg: &Config) -> Result<()> {
+    crate::windows::launch(
+        &cfg.windows_package,
+        &cfg.windows_app_id,
+        &cfg.sidecar_home,
+        &cfg.user_data_dir,
+    )
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+fn start(_cfg: &Config) -> Result<()> {
+    bail!("この OS では第2インスタンスの起動に対応していません。--no-relaunch を使ってください")
+}
+
+/// The `codex` binary for the sidecar's app-server. An explicit `codex_bin`
+/// setting always wins. With `prepare`, missing files are created (Windows
+/// copies the packaged binary); without it, the would-be path is returned.
+pub fn codex_bin(cfg: &Config, prepare: bool) -> Result<PathBuf> {
+    match &cfg.codex_bin {
+        Some(p) => Ok(p.clone()),
+        None => platform_codex_bin(cfg, prepare),
+    }
+}
+
+/// The binary bundled with the app, so the sidecar's state is written by the
+/// same version the GUI reads it with.
+#[cfg(target_os = "macos")]
+fn platform_codex_bin(cfg: &Config, _prepare: bool) -> Result<PathBuf> {
+    let bundled = cfg.app_path.join("Contents/Resources/codex");
+    Ok(if bundled.is_file() {
+        bundled
+    } else {
+        PathBuf::from("codex")
+    })
+}
+
+/// A copy of the package's binary: it cannot be run from inside the package.
+#[cfg(windows)]
+fn platform_codex_bin(cfg: &Config, prepare: bool) -> Result<PathBuf> {
+    let pkg = crate::windows::package(&cfg.windows_package)?;
+    crate::windows::codex_copy(&pkg, &cfg.cache_dir, prepare)
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+fn platform_codex_bin(_cfg: &Config, _prepare: bool) -> Result<PathBuf> {
+    Ok(PathBuf::from("codex"))
 }
 
 fn read_config(cfg: &Config) -> Result<String> {

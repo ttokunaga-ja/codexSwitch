@@ -54,7 +54,12 @@ pub fn assign(sidecar_home: &Path, thread_id: &str, cwd: &Path) -> Result<Assign
 
 /// `(id, name)` of the local project with the longest root that contains `cwd`.
 fn match_project(state: &Value, cwd: &Path) -> Option<(String, String)> {
+    match_project_in(state, &cwd.to_string_lossy(), cfg!(windows))
+}
+
+fn match_project_in(state: &Value, cwd: &str, windows: bool) -> Option<(String, String)> {
     let projects = state.get("local-projects")?.as_object()?;
+    let cwd = normalize(cwd, windows);
     let mut best: Option<(usize, String, String)> = None;
     for (key, proj) in projects {
         let id = proj["id"].as_str().unwrap_or(key);
@@ -65,15 +70,41 @@ fn match_project(state: &Value, cwd: &Path) -> Option<(String, String)> {
             .flatten()
             .filter_map(Value::as_str);
         for root in roots {
-            if cwd.starts_with(root) {
-                let depth = Path::new(root).components().count();
-                if best.as_ref().is_none_or(|(d, _, _)| depth > *d) {
-                    best = Some((depth, id.to_owned(), name.to_owned()));
-                }
+            let root = normalize(root, windows);
+            if within(&cwd, &root, windows)
+                && best.as_ref().is_none_or(|(len, ..)| root.len() > *len)
+            {
+                best = Some((root.len(), id.to_owned(), name.to_owned()));
             }
         }
     }
     best.map(|(_, id, name)| (id, name))
+}
+
+/// Windows paths compare case-insensitively and may use either separator;
+/// the app stores roots like `c:\\Users\\...` while threads record `C:\\...`.
+fn normalize(path: &str, windows: bool) -> String {
+    let sep = if windows { '\\' } else { '/' };
+    let p = if windows {
+        path.replace('/', "\\").to_lowercase()
+    } else {
+        path.to_owned()
+    };
+    let trimmed = p.trim_end_matches(sep);
+    if trimmed.is_empty() {
+        p
+    } else {
+        trimmed.to_owned()
+    }
+}
+
+/// Whether `path` is `root` or lies inside it, by whole path components.
+fn within(path: &str, root: &str, windows: bool) -> bool {
+    let sep = if windows { '\\' } else { '/' };
+    path == root
+        || path
+            .strip_prefix(root)
+            .is_some_and(|rest| rest.starts_with(sep) || root.ends_with(sep))
 }
 
 #[cfg(test)]
@@ -91,10 +122,7 @@ mod tests {
     #[test]
     fn picks_the_deepest_containing_root() {
         let s = state();
-        assert_eq!(
-            match_project(&s, Path::new("/dev/shop")).unwrap().1,
-            "shop"
-        );
+        assert_eq!(match_project(&s, Path::new("/dev/shop")).unwrap().1, "shop");
         assert_eq!(
             match_project(&s, Path::new("/dev/shop/ledger/src"))
                 .unwrap()
@@ -107,11 +135,25 @@ mod tests {
     fn matches_whole_path_components_only() {
         // "/dev/sho" must not claim "/dev/shop".
         assert_eq!(
-            match_project(&state(), Path::new("/dev/shop/x"))
-                .unwrap()
-                .1,
+            match_project(&state(), Path::new("/dev/shop/x")).unwrap().1,
             "shop"
         );
         assert!(match_project(&state(), Path::new("/elsewhere")).is_none());
+    }
+
+    #[test]
+    fn windows_paths_ignore_case_and_separator_style() {
+        let s = json!({"local-projects": {
+            "w1": {"id": "w1", "name": "shop", "rootPaths": ["c:\\Users\\RM2C\\dev\\shop"]},
+            "w2": {"id": "w2", "name": "sho", "rootPaths": ["c:/Users/RM2C/dev/sho"]}
+        }});
+        let hit = |cwd: &str| match_project_in(&s, cwd, true).map(|(_, n)| n);
+        assert_eq!(hit("C:\\Users\\rm2c\\dev\\shop").as_deref(), Some("shop"));
+        assert_eq!(
+            hit("C:\\Users\\RM2C\\dev\\shop\\src").as_deref(),
+            Some("shop")
+        );
+        assert_eq!(hit("C:\\Users\\RM2C\\dev\\sho").as_deref(), Some("sho"));
+        assert_eq!(hit("C:\\Users\\RM2C\\dev\\other"), None);
     }
 }

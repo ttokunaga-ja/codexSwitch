@@ -11,6 +11,9 @@ mod rollout;
 mod sidecar;
 mod threads;
 mod ui;
+// The script builders are unit-tested everywhere but only run on Windows.
+#[cfg_attr(not(windows), allow(dead_code))]
+mod windows;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -144,11 +147,18 @@ fn launch(cfg: &Config, provider: Option<String>, model: Option<String>, yes: bo
         println!(
             "第2インスタンスは起動中です。プロバイダは起動時に読まれるため、再起動が必要です。"
         );
-        if !yes && !ui::confirm("終了して再起動しますか？")? {
+        if cfg!(windows) {
+            println!("Windows 版のアプリは強制終了します。実行中の作業は中断されます。");
+        }
+        let question = format!("{}して再起動しますか？", sidecar::QUIT_VERB);
+        if !yes && !ui::confirm(&question)? {
             println!("中止しました。");
             return Ok(());
         }
-        ui::step("第2インスタンスを終了しています");
+        ui::step(&format!(
+            "第2インスタンスを{}しています",
+            sidecar::QUIT_VERB
+        ));
         sidecar::quit(cfg, &running)?;
     }
     sidecar::set_active(cfg, p, &model)?;
@@ -186,17 +196,30 @@ fn status(cfg: &Config) -> Result<()> {
             if p.catalog.is_file() { "✓" } else { "✗" }
         );
     }
-    let version = std::process::Command::new(&cfg.codex_bin)
-        .arg("--version")
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
-        .unwrap_or_else(|| "実行できません".to_owned());
-    println!(
-        "codex           : {} ({version})",
-        ui::tilde(&cfg.codex_bin)
-    );
+    #[cfg(windows)]
+    match windows::package(&cfg.windows_package) {
+        Ok(p) => println!("アプリ          : {} {}", cfg.windows_package, p.version),
+        Err(e) => println!("アプリ          : 見つかりません（{e:#}）"),
+    }
+    match sidecar::codex_bin(cfg, false) {
+        Ok(bin) => {
+            let version = std::process::Command::new(&bin)
+                .arg("--version")
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned());
+            let state = match version {
+                Some(v) => v,
+                None if cfg!(windows) && cfg.codex_bin.is_none() => {
+                    "未準備。初回の handoff でアプリから複製します".to_owned()
+                }
+                None => "実行できません".to_owned(),
+            };
+            println!("codex           : {} ({state})", ui::tilde(&bin));
+        }
+        Err(e) => println!("codex           : 決められません（{e:#}）"),
+    }
     println!("本体のホーム    : {}", ui::tilde(&cfg.source_home));
     println!("第2のホーム     : {}", ui::tilde(&cfg.sidecar_home));
     Ok(())

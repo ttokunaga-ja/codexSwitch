@@ -72,7 +72,10 @@ pub fn run(cfg: &Config, o: &Options) -> Result<()> {
     }
 
     if relaunch && !running.is_empty() {
-        ui::step("第2インスタンスを終了しています");
+        ui::step(&format!(
+            "第2インスタンスを{}しています",
+            sidecar::QUIT_VERB
+        ));
         sidecar::quit(cfg, &running)?;
     }
 
@@ -181,12 +184,13 @@ fn print_plan(cfg: &Config, p: &Plan, running: &[sysinfo::Pid], relaunch: bool) 
     }
     let state = match (running.is_empty(), relaunch) {
         (false, true) => format!(
-            "起動中（PID {}）→ 終了し、完了後に {} で起動します",
+            "起動中（PID {}）→ {}し、完了後に {} で起動します",
             running
                 .iter()
                 .map(|p| p.to_string())
                 .collect::<Vec<_>>()
                 .join(", "),
+            sidecar::QUIT_VERB,
             p.provider.name
         ),
         (true, true) => format!("停止中 → 完了後に {} で起動します", p.provider.name),
@@ -194,6 +198,11 @@ fn print_plan(cfg: &Config, p: &Plan, running: &[sysinfo::Pid], relaunch: bool) 
         (true, false) => "停止中のまま処理します（プロジェクト割り当ては行いません）".to_owned(),
     };
     println!("第2インスタンス: {state}");
+    if cfg!(windows) && !running.is_empty() && relaunch {
+        println!(
+            "               ※ Windows 版のアプリは通常の終了要求では閉じないため強制終了します。実行中の作業は中断されます"
+        );
+    }
 }
 
 fn execute(cfg: &Config, p: &Plan, assign_project: bool, timeout: Duration) -> Result<String> {
@@ -206,8 +215,14 @@ fn execute(cfg: &Config, p: &Plan, assign_project: bool, timeout: Duration) -> R
         println!("    {status}: {}", ui::tilde(path));
     }
 
+    let codex = sidecar::codex_bin(cfg, false)?;
+    if !codex.is_file() && codex.components().count() > 1 {
+        ui::step("codex の実行ファイルを準備しています（初回のみ）");
+    }
+    let codex = sidecar::codex_bin(cfg, true)?;
+
     ui::step("フォークしています");
-    let mut server = AppServer::spawn(&cfg.codex_bin, &cfg.sidecar_home, Some(&p.thread.cwd))?;
+    let mut server = AppServer::spawn(&codex, &cfg.sidecar_home, Some(&p.thread.cwd))?;
     let forked = server.request(
         "thread/fork",
         json!({"threadId": p.thread.id, "modelProvider": p.provider.name, "model": p.model}),
