@@ -46,6 +46,7 @@ pub fn run(cfg: &Config, o: &Options) -> Result<()> {
     let provider = cfg.provider(o.provider.as_deref().unwrap_or(&active.provider))?;
     let model = o.model.clone().unwrap_or_else(|| provider.model.clone());
     sidecar::ensure_key(provider)?;
+    crate::catalog::ensure(provider)?;
 
     let plan = Plan {
         name: o

@@ -21,6 +21,11 @@ pub struct Provider {
     pub catalog: PathBuf,
     pub effort: String,
     pub key_file: PathBuf,
+    /// Responses API endpoint. `init` writes the provider's definition into
+    /// the sidecar's config.toml only when it is known.
+    pub base_url: Option<String>,
+    /// Where the provider publishes a Codex model catalog, if it does.
+    pub catalog_url: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -75,6 +80,8 @@ struct FileProvider {
     catalog: String,
     effort: String,
     key_file: String,
+    base_url: Option<String>,
+    catalog_url: Option<String>,
 }
 
 pub fn home() -> PathBuf {
@@ -142,6 +149,14 @@ impl Config {
 
         let mut providers = default_providers(&sidecar_home);
         for (name, p) in file.providers {
+            // Redefining a built-in provider keeps its endpoints unless given.
+            let builtin = providers.get(&name);
+            let base_url = p
+                .base_url
+                .or_else(|| builtin.and_then(|b| b.base_url.clone()));
+            let catalog_url = p
+                .catalog_url
+                .or_else(|| builtin.and_then(|b| b.catalog_url.clone()));
             providers.insert(
                 name.clone(),
                 Provider {
@@ -151,6 +166,8 @@ impl Config {
                     catalog: expand(&p.catalog),
                     effort: p.effort,
                     key_file: expand(&p.key_file),
+                    base_url,
+                    catalog_url,
                 },
             );
         }
@@ -195,11 +212,14 @@ fn default_providers(sidecar: &Path) -> BTreeMap<String, Provider> {
         "zai".to_owned(),
         Provider {
             name: "zai".to_owned(),
-            label: "Z.ai".to_owned(),
+            label: "Z.ai Coding Plan".to_owned(),
             model: "glm-5.3-flash".to_owned(),
             catalog: sidecar.join("zai_models.json"),
             effort: "high".to_owned(),
             key_file: keys.join("zai.key"),
+            // Codex's endpoint; Claude Code and OpenCode use other ones.
+            base_url: Some("https://api.z.ai/api/v1".to_owned()),
+            catalog_url: Some("https://api.z.ai/api/v1/models".to_owned()),
         },
     );
     m.insert(
@@ -211,6 +231,8 @@ fn default_providers(sidecar: &Path) -> BTreeMap<String, Provider> {
             catalog: sidecar.join("model_catalog.json"),
             effort: "low".to_owned(),
             key_file: keys.join("openrouter.key"),
+            base_url: Some("https://openrouter.ai/api/v1".to_owned()),
+            catalog_url: None,
         },
     );
     m

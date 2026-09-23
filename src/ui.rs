@@ -32,6 +32,28 @@ pub fn tilde(path: &Path) -> String {
     }
 }
 
+/// A key file's path as the user should type it: `~/...` in a Unix shell,
+/// the full path on Windows, where neither cmd nor every tool knows `~`.
+pub fn key_path(path: &Path) -> String {
+    if cfg!(windows) {
+        crate::config::strip_verbatim(&path.to_string_lossy()).into_owned()
+    } else {
+        tilde(path)
+    }
+}
+
+/// A command that puts an API key into `path`, for the user's own shell.
+pub fn key_hint(path: &Path) -> String {
+    if cfg!(windows) {
+        format!(
+            "Set-Content -NoNewline -Path '{}' -Value '<キー>'   （PowerShell）",
+            key_path(path)
+        )
+    } else {
+        format!("printf %s '<キー>' > {}", key_path(path))
+    }
+}
+
 pub fn date(ms: i64) -> String {
     Local
         .timestamp_millis_opt(ms)

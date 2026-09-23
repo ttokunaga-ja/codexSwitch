@@ -1,6 +1,7 @@
 //! The second ("sidecar") Codex app instance: detect, quit, configure, launch.
 
 use crate::config::{Config, MANAGED_BEGIN, MANAGED_END, Provider};
+use crate::ui;
 use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -79,16 +80,22 @@ pub fn wait_for_quit(cfg: &Config, timeout: Duration) -> Result<()> {
     Ok(())
 }
 
-pub fn ensure_key(p: &Provider) -> Result<()> {
-    let ok = std::fs::metadata(&p.key_file)
+pub fn has_key(p: &Provider) -> bool {
+    std::fs::metadata(&p.key_file)
         .map(|m| m.len() > 0)
-        .unwrap_or(false);
-    if !ok {
+        .unwrap_or(false)
+}
+
+/// Checks only the provider being started: a missing key of an unused
+/// provider is none of the user's concern.
+pub fn ensure_key(p: &Provider) -> Result<()> {
+    if !has_key(p) {
         bail!(
-            "{} の API キーが空です: {}\n  設定例: printf %s '<key>' > {}",
+            "{} の API キーが入っていません。次のファイルにキーを入れてから、もう一度実行してください\n  \
+             ファイル: {}\n  入れ方  : {}\n  （codexSwitch init を実行すると、キーを貼り付けて保存することもできます）",
             p.label,
-            p.key_file.display(),
-            p.key_file.display()
+            ui::key_path(&p.key_file),
+            ui::key_hint(&p.key_file)
         );
     }
     Ok(())
@@ -123,17 +130,10 @@ pub fn set_active(cfg: &Config, p: &Provider, model: &str) -> Result<()> {
     let path = cfg.sidecar_config();
     let text = read_config(cfg)?;
     let (start, end) = managed_range(&text, cfg)?;
-    let block = format!(
-        "{MANAGED_BEGIN}\nmodel_provider = {}\nmodel = {}\nmodel_catalog_json = {}\nmodel_reasoning_effort = {}\n{MANAGED_END}",
-        toml_str(&p.name),
-        toml_str(model),
-        toml_str(&p.catalog.to_string_lossy()),
-        toml_str(&p.effort),
-    );
     let updated = format!(
         "{}{}{}",
         &text[..start],
-        block,
+        managed_block(p, model),
         &text[end + MANAGED_END.len()..]
     );
     let tmp = path.with_extension("toml.codex-switch.tmp");
@@ -147,6 +147,17 @@ pub fn set_active(cfg: &Config, p: &Provider, model: &str) -> Result<()> {
 /// over to the running one, which then opens its window.
 pub fn show(cfg: &Config) -> Result<()> {
     start(cfg)
+}
+
+/// The block this tool owns in the sidecar's config.toml, markers included.
+pub fn managed_block(p: &Provider, model: &str) -> String {
+    format!(
+        "{MANAGED_BEGIN}\nmodel_provider = {}\nmodel = {}\nmodel_catalog_json = {}\nmodel_reasoning_effort = {}\n{MANAGED_END}",
+        toml_str(&p.name),
+        toml_str(model),
+        toml_str(&p.catalog.to_string_lossy()),
+        toml_str(&p.effort),
+    )
 }
 
 /// Starts the sidecar and waits until it is actually running: both launchers
@@ -241,20 +252,24 @@ fn read_config(cfg: &Config) -> Result<String> {
         .with_context(|| format!("第2インスタンスの設定を読めません: {}", path.display()))
 }
 
+pub fn has_managed_block(text: &str) -> bool {
+    matches!((text.find(MANAGED_BEGIN), text.find(MANAGED_END)), (Some(s), Some(e)) if s < e)
+}
+
 fn managed_range(text: &str, cfg: &Config) -> Result<(usize, usize)> {
     let start = text.find(MANAGED_BEGIN);
     let end = text.find(MANAGED_END);
     match (start, end) {
         (Some(s), Some(e)) if s < e => Ok((s, e)),
         _ => bail!(
-            "{} に管理ブロックがありません。次の2行で囲んだブロックを用意してください:\n  {MANAGED_BEGIN}\n  {MANAGED_END}",
+            "{} に管理ブロックがありません。codexSwitch init を実行すると追加されます",
             cfg.sidecar_config().display()
         ),
     }
 }
 
 /// A TOML string value, quoted and escaped as needed.
-fn toml_str(s: &str) -> String {
+pub fn toml_str(s: &str) -> String {
     toml::Value::String(s.to_owned()).to_string()
 }
 

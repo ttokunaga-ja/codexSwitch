@@ -4,10 +4,12 @@
 //! Unofficial. Not affiliated with or endorsed by OpenAI.
 
 mod appserver;
+mod catalog;
 mod config;
 mod handoff;
 mod projects;
 mod rollout;
+mod setup;
 mod sidecar;
 mod threads;
 mod ui;
@@ -30,6 +32,7 @@ use std::time::Duration;
     about = "Codex アプリの2つ目のインスタンスを別プロバイダで起動し、会話を引き継ぐ（非公式ツール）",
     override_usage = "codexSwitch [-<プロバイダ>] [--model <MODEL>]\n       codexSwitch <COMMAND>",
     after_help = "例:\n  \
+        codexSwitch init            最初の準備（設定とモデル一覧を作り、API キーの置き場所を案内する）\n  \
         codexSwitch                 前回と同じプロバイダ・モデルで起動する\n  \
         codexSwitch -zai            Z.ai で起動する\n  \
         codexSwitch -openrouter     OpenRouter で起動する\n  \
@@ -52,6 +55,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// 最初の準備: 第2インスタンスの設定とモデル一覧を作り、API キーの置き場所を案内する
+    Init,
     /// 本体の会話を第2インスタンスへ引き継ぐ
     Handoff {
         /// 会話の ID、またはタイトルの一部
@@ -185,6 +190,7 @@ fn run(cli: Cli) -> Result<()> {
             },
         ),
         Some(Command::Status) => status(&cfg),
+        Some(Command::Init) => setup::run(&cfg),
     }
 }
 
@@ -200,6 +206,20 @@ fn launch(cfg: &Config, provider: Option<String>, model: Option<String>) -> Resu
         None => p.model.clone(),
     };
     sidecar::ensure_key(p)?;
+    if catalog::needs_fetch(p) {
+        ui::step(&format!("{} からモデル一覧を取得しています", p.label));
+    }
+    match catalog::ensure(p)? {
+        catalog::Outcome::Present => {}
+        catalog::Outcome::Bundled => ui::step(&format!(
+            "モデル一覧を作成しました: {}",
+            ui::tilde(&p.catalog)
+        )),
+        catalog::Outcome::Fetched => ui::step(&format!(
+            "モデル一覧を取得しました: {}",
+            ui::tilde(&p.catalog)
+        )),
+    }
 
     if !sidecar::running(cfg).is_empty() {
         if p.name == active.provider && model == active.model {

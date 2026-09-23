@@ -1,0 +1,129 @@
+{
+  "models": [
+    {
+      "apply_patch_tool_type": "freeform",
+      "base_instructions": "",
+      "context_window": 262144,
+      "default_reasoning_level": "low",
+      "default_reasoning_summary": "none",
+      "description": "Vision + computer-use. Verified: image answered correctly, tool call completed.",
+      "display_name": "Nex N2.5 Pro (free)",
+      "effective_context_window_percent": 95,
+      "experimental_supported_tools": [],
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "max_context_window": 262144,
+      "priority": 1,
+      "shell_type": "shell_command",
+      "slug": "nex-agi/nex-n2.5-pro:free",
+      "support_verbosity": false,
+      "supported_in_api": true,
+      "supported_reasoning_levels": [
+        {
+          "effort": "low",
+          "description": "Light reasoning"
+        },
+        {
+          "effort": "medium",
+          "description": "Balanced reasoning"
+        },
+        {
+          "effort": "high",
+          "description": "Enhanced reasoning"
+        }
+      ],
+      "supports_parallel_tool_calls": true,
+      "supports_reasoning_summaries": true,
+      "truncation_policy": {
+        "limit": 10000,
+        "mode": "bytes"
+      },
+      "visibility": "list"
+    },
+    {
+      "apply_patch_tool_type": "freeform",
+      "base_instructions": "",
+      "context_window": 1000000,
+      "default_reasoning_level": "low",
+      "default_reasoning_summary": "none",
+      "description": "1M context, tools, no vision. Large-diff and architecture review.",
+      "display_name": "Nemotron 3 Ultra (free)",
+      "effective_context_window_percent": 95,
+      "experimental_supported_tools": [],
+      "input_modalities": [
+        "text"
+      ],
+      "max_context_window": 1000000,
+      "priority": 2,
+      "shell_type": "shell_command",
+      "slug": "nvidia/nemotron-3-ultra-550b-a55b:free",
+      "support_verbosity": false,
+      "supported_in_api": true,
+      "supported_reasoning_levels": [
+        {
+          "effort": "low",
+          "description": "Light reasoning"
+        },
+        {
+          "effort": "medium",
+          "description": "Balanced reasoning"
+        },
+        {
+          "effort": "high",
+          "description": "Enhanced reasoning"
+        }
+      ],
+      "supports_parallel_tool_calls": true,
+      "supports_reasoning_summaries": true,
+      "truncation_policy": {
+        "limit": 10000,
+        "mode": "bytes"
+      },
+      "visibility": "list"
+    },
+    {
+      "apply_patch_tool_type": "freeform",
+      "base_instructions": "",
+      "context_window": 262144,
+      "default_reasoning_level": "low",
+      "default_reasoning_summary": "none",
+      "description": "Vision cross-check, separate vendor from Nex. Keep reasoning effort low.",
+      "display_name": "Ling 3.0 Flash VL (free)",
+      "effective_context_window_percent": 95,
+      "experimental_supported_tools": [],
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "max_context_window": 262144,
+      "priority": 3,
+      "shell_type": "shell_command",
+      "slug": "inclusionai/ling-3.0-flash-vl:free",
+      "support_verbosity": false,
+      "supported_in_api": true,
+      "supported_reasoning_levels": [
+        {
+          "effort": "low",
+          "description": "Light reasoning"
+        },
+        {
+          "effort": "medium",
+          "description": "Balanced reasoning"
+        },
+        {
+          "effort": "high",
+          "description": "Enhanced reasoning"
+        }
+      ],
+      "supports_parallel_tool_calls": true,
+      "supports_reasoning_summaries": true,
+      "truncation_policy": {
+        "limit": 10000,
+        "mode": "bytes"
+      },
+      "visibility": "list"
+    }
+  ]
+}

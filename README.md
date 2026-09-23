@@ -10,6 +10,7 @@ Run a second Codex app instance on another model provider (Z.ai, OpenRouter, ...
 ## できること
 
 ```text
+codexSwitch init                  最初の準備（設定とモデル一覧を作り、API キーの置き場所を案内）
 codexSwitch                       第2インスタンスを前回と同じプロバイダ・モデルで起動
 codexSwitch -zai                  Z.ai で起動
 codexSwitch -openrouter           OpenRouter で起動
@@ -37,22 +38,77 @@ Codex は `CODEX_HOME` ごとに**プロバイダを1つしか持てず**、ア�
 - Codex アプリ
   - macOS: `/Applications/ChatGPT.app`
   - Windows: Microsoft Store 版（MSIX パッケージ `OpenAI.Codex`）
-- Rust（ビルドする場合）
-- 第2インスタンス用の設定（下記）
+- Z.ai Coding Plan か OpenRouter の API キー（使う方だけ）
+- Rust（macOS と、Windows で exe 版をビルドする場合）
 
-## セットアップ
+## はじめかた
 
-### 1. API キーをファイルに置く
+4ステップです。アプリの場所や設定ファイルのパスは、OS ごとに自動で決まります。
+
+### 1. インストールする
+
+macOS:
 
 ```sh
-printf %s '<Z.ai Coding Plan のキー>' > ~/.codex/zai.key
-printf %s '<OpenRouter のキー>'        > ~/.codex/openrouter.key
-chmod 600 ~/.codex/zai.key ~/.codex/openrouter.key
+git clone https://github.com/ttokunaga-ja/codexSwitch.git
+cd codexSwitch
+./install.sh            # ~/.local/bin/codexSwitch に入ります
 ```
 
-### 2. 第2インスタンスの設定を作る
+Windows: 次のどちらか一方を、PATH の通ったフォルダ（例: `%USERPROFILE%\.local\bin`）に置きます。
 
-`~/.codex-switch/config.toml` を作ります。先頭の**管理ブロック**（2つのコメント行で囲んだ部分）は、このツールが書き換えます。
+- **exe 版**：MSVC 版の Rust（`stable-x86_64-pc-windows-msvc`）で `cargo build --release` した `target\release\codexSwitch.exe`、または GitHub Actions の成果物（`codexSwitch-Windows`）
+- **スクリプト版**：`windows\codexSwitch.cmd` と `windows\codexSwitch-script.ps1` の2つ。準備（`init`）と起動を行います。スマート アプリ コントロールで exe が止められる環境向けです
+
+  ```powershell
+  Copy-Item windows\codexSwitch.cmd, windows\codexSwitch-script.ps1 "$env:USERPROFILE\.local\bin"
+  ```
+
+### 2. 準備する
+
+```sh
+codexSwitch init
+```
+
+第2インスタンスの設定とモデル一覧を作り、最後に API キーの置き場所を案内します。途中で API キーを貼り付けることもできます（画面には表示されません）。使わないもの、あとでファイルに入れるものは、そのまま Enter で進めます。
+
+```text
+API キーのファイル（使うものだけで構いません）:
+  OpenRouter       ~/.codex/openrouter.key  未設定
+                   入れ方: printf %s '<キー>' > ~/.codex/openrouter.key
+  Z.ai Coding Plan ~/.codex/zai.key  ✓
+```
+
+### 3. API キーを入れる
+
+使うものだけ、案内されたファイルにキーを入れます。
+
+| 提供元 | macOS | Windows |
+| --- | --- | --- |
+| Z.ai Coding Plan | `~/.codex/zai.key` | `%USERPROFILE%\.codex\zai.key` |
+| OpenRouter | `~/.codex/openrouter.key` | `%USERPROFILE%\.codex\openrouter.key` |
+
+```sh
+printf %s '<キー>' > ~/.codex/zai.key                                    # macOS
+Set-Content -NoNewline -Path "$env:USERPROFILE\.codex\zai.key" -Value '<キー>'   # Windows（PowerShell）
+```
+
+### 4. 起動する
+
+```sh
+codexSwitch -zai
+codexSwitch -openrouter
+```
+
+起動するときは、その提供元のキーだけを確かめます。`-zai` で OpenRouter のキーを求めることはありません。キーがなければ、置き場所と入れ方を表示して止まります。Z.ai のモデル一覧は、キーが入ったあとの最初の起動で Z.ai から取得します。
+
+## init が用意するもの
+
+何度実行しても安全です。あるものはそのまま使い、足りないものだけを足します。設定ファイルを書き換えるときは、先に `config.toml.bak.<日時>` へ控えを取ります。
+
+### 第2インスタンスの設定
+
+`~/.codex-switch/config.toml`（Windows は `%USERPROFILE%\.codex-switch\config.toml`）を次の形で作ります。macOS の例です。
 
 ```toml
 # >>> codexSwitch managed: active provider >>>
@@ -61,16 +117,6 @@ model = "glm-5.3-flash"
 model_catalog_json = "/Users/you/.codex-switch/zai_models.json"
 model_reasoning_effort = "high"
 # <<< codexSwitch managed: active provider <<<
-
-[model_providers.zai]
-name = "Z.ai Coding Plan"
-base_url = "https://api.z.ai/api/v1"
-wire_api = "responses"
-requires_openai_auth = false
-
-[model_providers.zai.auth]
-command = "/bin/cat"
-args = ["/Users/you/.codex/zai.key"]
 
 [model_providers.openrouter]
 name = "OpenRouter"
@@ -81,32 +127,32 @@ requires_openai_auth = false
 [model_providers.openrouter.auth]
 command = "/bin/cat"
 args = ["/Users/you/.codex/openrouter.key"]
+
+[model_providers.zai]
+name = "Z.ai Coding Plan"
+base_url = "https://api.z.ai/api/v1"
+wire_api = "responses"
+requires_openai_auth = false
+
+[model_providers.zai.auth]
+command = "/bin/cat"
+args = ["/Users/you/.codex/zai.key"]
 ```
 
+- 先頭の**管理ブロック**（2つのコメント行で囲んだ部分）は、起動のたびに codexSwitch が書き換えます
+- キーは設定ファイルに書かず、コマンドでキーのファイルから読みます。Windows では `cmd.exe /c type` を使います
 - `requires_openai_auth = false` で、第2インスタンスは ChatGPT へのサインインなしで動きます
-- `auth.args` のパスは**絶対パス**で書いてください（`~` は展開されません）
-- **Windows** では設定の置き場所が `%USERPROFILE%\.codex-switch\config.toml`、キーは `%USERPROFILE%\.codex\*.key` です。キーの読み取りは `cmd /c type` を使います。バックスラッシュをそのまま書けるよう、TOML のリテラル文字列（`'...'`）にします
-
-  ```toml
-  [model_providers.openrouter.auth]
-  command = 'C:\Windows\System32\cmd.exe'
-  args = ['/c', 'type', 'C:\Users\you\.codex\openrouter.key']
-  ```
-
 - Z.ai は Codex 用のエンドポイント `https://api.z.ai/api/v1` を使います。Claude Code 用や OpenCode 用とは別です
+- 手で書いた設定があるときは、その提供元とモデルを引き継いで管理ブロックを加え、元の行は `# (codexSwitch init)` を付けて残します。足りない提供元の定義は末尾に足します
 
-### 3. モデルカタログを置く
+### モデル一覧
 
 `model_catalog_json` で指定したファイルが、アプリのモデル選択の中身になります。
 
-- **Z.ai**：`GET https://api.z.ai/api/v1/models` が Codex 形式のカタログをそのまま返します
+- **Z.ai**（`zai_models.json`）：Z.ai が Codex 形式で配信している一覧（`GET https://api.z.ai/api/v1/models`）を取得します。そのままではアプリの Effort スライダーが2段しか出ないため、選べる段階を low〜max の5段に広げ、既定を high にします
+- **OpenRouter**（`model_catalog.json`）：Codex のツール呼び出しが通ることを確かめた無料モデル3つ（`nex-agi/nex-n2.5-pro:free`、`nvidia/nemotron-3-ultra-550b-a55b:free`、`inclusionai/ling-3.0-flash-vl:free`）で作ります。無料モデルの提供状況は変わるので、必要に応じて編集してください
 
-  ```sh
-  curl -s https://api.z.ai/api/v1/models \
-    -H "authorization: Bearer $(cat ~/.codex/zai.key)" > ~/.codex-switch/zai_models.json
-  ```
-
-- **OpenRouter**：自分で書きます。1モデルにつき次の形です
+OpenRouter のモデルを足すときは、1モデルにつき次の形で書きます。
 
   ```json
   {"models": [{
@@ -138,29 +184,6 @@ args = ["/Users/you/.codex/openrouter.key"]
   ```
 
   > **`codex debug models` の出力（OpenAI のモデルの定義）を複製して作らないでください。** OpenAI のモデル用の `"tool_mode": "code_mode_only"` が含まれていて、新しい版の codex はこれに従ってツールを JavaScript 実行用の入れ物（namespace）にまとめて送ります。OpenAI 以外のモデルはこの形を受け付けず、`tools[0].function: missing field 'parameters'` のようなエラーで止まります。上の形は Z.ai が配信している Codex 向けカタログに合わせたものです
-
-## インストール
-
-### macOS
-
-```sh
-git clone https://github.com/ttokunaga-ja/codexSwitch.git
-cd codexSwitch
-./install.sh            # ~/.local/bin/codexSwitch に入ります
-```
-
-### Windows
-
-次のどちらかを、PATH の通ったフォルダ（例: `%USERPROFILE%\.local\bin`）に置きます。
-
-- **exe 版**：MSVC 版の Rust（`stable-x86_64-pc-windows-msvc`）で `cargo build --release` した `target\release\codexSwitch.exe`、または GitHub Actions の成果物（`codexSwitch-Windows`）
-- **スクリプト版**：`windows\codexSwitch.cmd` と `windows\codexSwitch-launch.ps1` の2つ。起動（`codexSwitch`、`codexSwitch -zai` など）だけを行います。スマート アプリ コントロールで exe が止められる環境向けです
-
-  ```powershell
-  Copy-Item windows\codexSwitch.cmd, windows\codexSwitch-launch.ps1 "$env:USERPROFILE\.local\bin"
-  ```
-
-exe 版とスクリプト版は、どちらか一方だけを置いてください。
 
 ## 使い方
 
@@ -284,9 +307,11 @@ model    = "nvidia/nemotron-3-ultra-550b-a55b:free"
 catalog  = "~/.codex-switch/model_catalog.json"
 effort   = "low"
 key_file = "~/.codex/openrouter.key"
+# base_url    = "https://..."   # 追加したプロバイダだけ必要
+# catalog_url = "https://..."   # モデル一覧を配信しているプロバイダだけ
 ```
 
-`[providers.<名前>]` を書くと、同じ名前の既定の定義を置き換えます。新しい名前を書けば、プロバイダを追加できます（第2インスタンスの `config.toml` にも同じ名前の `model_providers` が必要です）。追加したプロバイダも `-<名前>` で指定できます。
+`[providers.<名前>]` を書くと、同じ名前の既定の定義を置き換えます（接続先は既定のものを引き継ぎます）。新しい名前を書けば、プロバイダを追加できます。`base_url` を書いておくと、`codexSwitch init` が第2インスタンスの `config.toml` に `model_providers` の定義を足します。追加したプロバイダも `-<名前>` で指定できます。
 
 Windows のスクリプト版はこの設定ファイルを読まず、既定値（`zai` と `openrouter`）で動きます。
 
@@ -321,7 +346,7 @@ Windows 版のアプリは MSIX パッケージなので、macOS とは次の点
 - **codex の実行ファイル**：パッケージ内の `codex.exe` は外から実行できない（Access is denied）ため、アプリの版ごとに `%LOCALAPPDATA%\codex-switch\` へ複製して使います（初回のみ約300MB）
 - **閉じる・終了する**：×ボタンで閉じても、アプリは通知領域に残って動き続けます。終了は通知領域のアイコンのメニューから行います。会話の引き継ぎで第2インスタンスを止める必要があるときも、この方法で終了されるのを待ちます
 - **実行する場所**：サインイン中のデスクトップのターミナルから実行してください。SSH などから実行すると、アプリは起動しても画面に表示されません（スクリプト版は、この場合エラーで止まります）
-- **スマート アプリ コントロール**：オンの環境では、署名のない `codexSwitch.exe` が Windows によって止められることがあります（終了コード 4551）。判定はファイルごとのため、版によって通ったり止められたりします。止められる場合は、起動にはスクリプト版を使ってください
+- **スマート アプリ コントロール**：オンの環境では、署名のない `codexSwitch.exe` が Windows によって止められることがあります（終了コード 4551）。判定はファイルごとのため、版によって通ったり止められたりします。止められる場合は、準備と起動にはスクリプト版を使ってください
 
 Windows の実機で確認したこと:
 
@@ -330,6 +355,7 @@ Windows の実機で確認したこと:
 - 会話のコピー、フォーク、名前付け、最初のメッセージの送信、失敗時の再起動
 - 2つ目のインスタンスの起動（本体のアプリには影響しない）
 - スクリプト版の起動：前回と同じ内容での起動、`-zai`・`-openrouter`・`--model` の指定、起動中の再表示と、違う内容を指定したときに止まること、×ボタンで閉じたあとにウィンドウが戻ること
+- スクリプト版の `init`：設定とモデル一覧の作成、Z.ai のモデル一覧の取得（Codex が読み込めることも確認）、2回目は何も変えないこと、手書きの設定への管理ブロックの追加と控えの作成。キーの貼り付け（画面に表示しない入力）は、macOS の Rust 版でのみ確認しています
 - 読み取り専用の最初のメッセージでコマンドが起動されず、ファイルも作られないこと
 
 スマート アプリ コントロールに止められたため、最終版の `codexSwitch.exe` での通し実行（終了の待機、最初のメッセージの完了からプロジェクト割り当て、再起動まで）は未確認です
