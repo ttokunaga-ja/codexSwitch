@@ -159,16 +159,16 @@ mod tests {
         // Windows: case-insensitive, whole components only.
         assert_eq!(
             rel(
-                "c:\\users\\rm2c\\.codex\\sessions\\a.jsonl",
-                "C:\\Users\\RM2C\\.codex",
+                "c:\\users\\you\\.codex\\sessions\\a.jsonl",
+                "C:\\Users\\YOU\\.codex",
                 true
             ),
             Some(PathBuf::from("sessions\\a.jsonl"))
         );
         assert_eq!(
             rel(
-                "C:\\Users\\RM2C\\.codex2\\a.jsonl",
-                "C:\\Users\\RM2C\\.codex",
+                "C:\\Users\\YOU\\.codex2\\a.jsonl",
+                "C:\\Users\\YOU\\.codex",
                 true
             ),
             None
@@ -176,8 +176,8 @@ mod tests {
         // Codex may record paths with the extended-length prefix.
         assert_eq!(
             rel(
-                "\\\\?\\C:\\Users\\RM2C\\.codex\\a.jsonl",
-                "C:\\Users\\RM2C\\.codex",
+                "\\\\?\\C:\\Users\\YOU\\.codex\\a.jsonl",
+                "C:\\Users\\YOU\\.codex",
                 true
             ),
             Some(PathBuf::from("a.jsonl"))
