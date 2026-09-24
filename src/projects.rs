@@ -144,20 +144,20 @@ mod tests {
     #[test]
     fn windows_paths_ignore_case_and_separator_style() {
         let s = json!({"local-projects": {
-            "w1": {"id": "w1", "name": "shop", "rootPaths": ["c:\\Users\\RM2C\\dev\\shop"]},
-            "w2": {"id": "w2", "name": "sho", "rootPaths": ["c:/Users/RM2C/dev/sho"]}
+            "w1": {"id": "w1", "name": "shop", "rootPaths": ["c:\\Users\\you\\dev\\shop"]},
+            "w2": {"id": "w2", "name": "sho", "rootPaths": ["c:/Users/you/dev/sho"]}
         }});
         let hit = |cwd: &str| match_project_in(&s, cwd, true).map(|(_, n)| n);
-        assert_eq!(hit("C:\\Users\\rm2c\\dev\\shop").as_deref(), Some("shop"));
+        assert_eq!(hit("C:\\Users\\YOU\\dev\\shop").as_deref(), Some("shop"));
         assert_eq!(
-            hit("C:\\Users\\RM2C\\dev\\shop\\src").as_deref(),
+            hit("C:\\Users\\you\\dev\\shop\\src").as_deref(),
             Some("shop")
         );
-        assert_eq!(hit("C:\\Users\\RM2C\\dev\\sho").as_deref(), Some("sho"));
-        assert_eq!(hit("C:\\Users\\RM2C\\dev\\other"), None);
+        assert_eq!(hit("C:\\Users\\you\\dev\\sho").as_deref(), Some("sho"));
+        assert_eq!(hit("C:\\Users\\you\\dev\\other"), None);
         // Codex records cwd with the extended-length prefix.
         assert_eq!(
-            hit("\\\\?\\C:\\Users\\RM2C\\dev\\shop\\src").as_deref(),
+            hit("\\\\?\\C:\\Users\\you\\dev\\shop\\src").as_deref(),
             Some("shop")
         );
     }
