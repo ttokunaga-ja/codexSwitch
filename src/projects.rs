@@ -20,6 +20,10 @@ pub enum Assignment {
 /// Assigns `thread_id` to the project whose root most closely contains `cwd`.
 pub fn assign(sidecar_home: &Path, thread_id: &str, cwd: &Path) -> Result<Assignment> {
     let path = sidecar_home.join(STATE_FILE);
+    // A sidecar that has never been started has no projects yet.
+    if !path.exists() {
+        return Ok(Assignment::NoMatch);
+    }
     let text = std::fs::read_to_string(&path)
         .with_context(|| format!("アプリの状態ファイルを読めません: {}", path.display()))?;
     let mut state: Value = serde_json::from_str(&text)

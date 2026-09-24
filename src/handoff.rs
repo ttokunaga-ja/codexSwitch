@@ -229,18 +229,7 @@ fn execute(cfg: &Config, p: &Plan) -> Result<String> {
     }
     println!("  ---");
 
-    let listed = server.request(
-        "thread/list",
-        json!({"limit": 100, "useStateDbOnly": true, "modelProviders": [p.provider.name]}),
-        Duration::from_secs(60),
-    )?;
-    let visible = listed["data"]
-        .as_array()
-        .is_some_and(|a| a.iter().any(|t| t["id"] == new_id.as_str()));
     drop(server);
-    if !visible {
-        println!("    注意: 一覧にまだ表示されていません（ID: {new_id}）");
-    }
 
     match projects::assign(&cfg.sidecar_home, &new_id, &p.thread.cwd)? {
         projects::Assignment::Assigned { project } => {

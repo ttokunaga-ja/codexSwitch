@@ -62,9 +62,9 @@ enum Command {
     /// 本体の会話を第2インスタンスへ引き継ぐ（-zai / -openrouter で引き継ぎ先を選べる）
     #[command(override_usage = "codexSwitch handoff <チャット名/ID> [-zai | -openrouter]")]
     Handoff {
-        /// 引き継ぐ会話の名前（一部でよい）または ID
-        #[arg(value_name = "チャット名/ID")]
-        query: String,
+        /// 引き継ぐ会話の名前（一部でよい）または ID。空白を含む名前も引用符なしで書ける
+        #[arg(value_name = "チャット名/ID", required = true, num_args = 1..)]
+        query: Vec<String>,
         /// -zai / -openrouter の受け口。直接は使わない
         #[arg(long, hide = true)]
         provider: Option<String>,
@@ -142,7 +142,9 @@ fn run(cli: Cli) -> Result<()> {
     match cli.command {
         None => launch(&cfg, cli.provider, cli.model),
         Some(Command::Init) => setup::run(&cfg),
-        Some(Command::Handoff { query, provider }) => handoff::run(&cfg, &query, provider),
+        Some(Command::Handoff { query, provider }) => {
+            handoff::run(&cfg, &query.join(" "), provider)
+        }
         Some(Command::Status) => status(&cfg),
     }
 }
@@ -321,6 +323,25 @@ mod tests {
             cli.command,
             Some(Command::Handoff { provider: Some(ref p), .. }) if p == "zai"
         ));
+    }
+
+    #[test]
+    fn a_chat_name_with_spaces_needs_no_quotes() {
+        let parse = |args: &[&str]| {
+            Cli::try_parse_from(expand_provider_flags(args.iter().map(OsString::from))).unwrap()
+        };
+        for args in [
+            &["codexSwitch", "handoff", "WebAdmin", "update", "-zai"][..],
+            &["codexSwitch", "handoff", "-zai", "WebAdmin", "update"],
+            &["codexSwitch", "handoff", "WebAdmin update", "-zai"],
+        ] {
+            let Some(Command::Handoff { query, provider }) = parse(args).command else {
+                panic!("not a handoff: {args:?}");
+            };
+            assert_eq!(query.join(" "), "WebAdmin update");
+            assert_eq!(provider.as_deref(), Some("zai"));
+        }
+        assert!(Cli::try_parse_from(["codexSwitch", "handoff"]).is_err());
     }
 
     #[test]

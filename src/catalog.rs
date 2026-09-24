@@ -150,6 +150,14 @@ mod tests {
         // Compared with runs of whitespace collapsed: the script aligns columns.
         let flat = script.split_whitespace().collect::<Vec<_>>().join(" ");
         assert!(script.contains(crate::config::MANAGED_BEGIN));
+        // The first message of a handoff is the same in both.
+        for sentence in [
+            "へ引き継ぎました。ここまでの状況と、次に着手すべきことを3行以内で整理してください。",
+            "ファイルの変更やコマンドの実行はしないでください。",
+        ] {
+            assert!(script.contains(sentence), "script lacks {sentence}");
+            assert!(include_str!("handoff.rs").contains(sentence));
+        }
         assert!(script.contains(crate::config::MANAGED_END));
         let cfg =
             crate::config::Config::load(Some(std::path::Path::new("/nonexistent/c.toml"))).unwrap();
