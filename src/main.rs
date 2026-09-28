@@ -34,6 +34,7 @@ use std::process::ExitCode;
         codexSwitch init\n       \
         codexSwitch handoff <チャット名/ID> [-zai | -openrouter]\n       \
         codexSwitch status\n       \
+        codexSwitch version\n       \
         codexSwitch update",
     after_help = "例:\n  \
         codexSwitch init                 最初の準備（設定とモデル一覧を作り、API キーの置き場所を案内する）\n  \
@@ -41,6 +42,7 @@ use std::process::ExitCode;
         codexSwitch -zai                 Z.ai で起動する\n  \
         codexSwitch -openrouter          OpenRouter で起動する\n  \
         codexSwitch handoff <チャット名/ID>  本体の会話を引き継ぐ\n  \
+        codexSwitch version              今の版と、最新かどうかを表示する\n  \
         codexSwitch update               最新のリリースに更新する\n\n\
         終了はアプリの画面から行います（起動中に -zai / -openrouter を切り替えるときも、先に終了します）。"
 )]
@@ -74,6 +76,8 @@ enum Command {
     },
     /// 第2インスタンスと設定の状態を表示する
     Status,
+    /// 今の版と、GitHub の最新のリリースかどうかを表示する
+    Version,
     /// GitHub の最新のリリースに更新する
     Update,
 }
@@ -154,7 +158,8 @@ fn run(cli: Cli) -> Result<()> {
             handoff::run(&cfg()?, &query.join(" "), provider)
         }
         Some(Command::Status) => status(&cfg()?),
-        // Needs no configuration, so a broken one cannot block a fix.
+        // These need no configuration, so a broken one cannot block a fix.
+        Some(Command::Version) => update::version(),
         Some(Command::Update) => update::run(),
     }
 }

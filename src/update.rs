@@ -7,6 +7,7 @@ use crate::ui;
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -19,18 +20,53 @@ const ASSET: &str = if cfg!(windows) {
     "codexSwitch-macos"
 };
 
-pub fn run() -> Result<()> {
-    let current = env!("CARGO_PKG_VERSION");
-    ui::step("最新の版を確認しています");
+const CURRENT: &str = env!("CARGO_PKG_VERSION");
+
+/// `codexSwitch version`: this version, and how it stands against the latest
+/// release. `--version` stays offline: `update` and the installers read it.
+pub fn version() -> Result<()> {
+    let (tag, latest) = latest_release().map_err(|e| {
+        e.context(format!(
+            "codexSwitch {CURRENT}（最新の版を確認できませんでした）"
+        ))
+    })?;
+    println!(
+        "codexSwitch {CURRENT}（{}）",
+        standing(CURRENT, &tag, &latest)
+    );
+    Ok(())
+}
+
+fn standing(current: &str, tag: &str, latest: &str) -> String {
+    match parse(current).cmp(&parse(latest)) {
+        Ordering::Less => {
+            format!("新しい版 {tag} があります。codexSwitch update で更新できます")
+        }
+        Ordering::Equal => "最新です".to_owned(),
+        Ordering::Greater => format!("最新のリリース {tag} より新しい版です"),
+    }
+}
+
+/// The latest release's tag and version.
+fn latest_release() -> Result<(String, String)> {
     let release: Value = serde_json::from_slice(&get(&format!(
         "https://api.github.com/repos/{REPO}/releases/latest"
     ))?)
     .context("リリースの情報を読めません")?;
-    let tag = release["tag_name"].as_str().unwrap_or_default();
-    let latest = tag
+    let tag = release["tag_name"].as_str().unwrap_or_default().to_owned();
+    let version = tag
         .strip_prefix('v')
         .filter(|v| parse(v).is_some())
+        .map(str::to_owned)
         .with_context(|| format!("最新のリリースの版を読み取れません: {tag:?}"))?;
+    Ok((tag, version))
+}
+
+pub fn run() -> Result<()> {
+    let current = CURRENT;
+    ui::step("最新の版を確認しています");
+    let (tag, latest) = latest_release()?;
+    let latest = latest.as_str();
     if parse(latest) <= parse(current) {
         println!("最新です（v{current}）");
         return Ok(());
@@ -162,6 +198,13 @@ mod tests {
         for bad in ["0.2", "0.2.0.1", "0.2.x", "v0.2.0", ""] {
             assert_eq!(parse(bad), None, "{bad}");
         }
+    }
+
+    #[test]
+    fn tells_where_this_version_stands() {
+        assert_eq!(standing("0.2.2", "v0.2.2", "0.2.2"), "最新です");
+        assert!(standing("0.2.2", "v0.10.0", "0.10.0").starts_with("新しい版 v0.10.0 があります"));
+        assert!(standing("0.3.0", "v0.2.2", "0.2.2").contains("より新しい版です"));
     }
 
     #[test]

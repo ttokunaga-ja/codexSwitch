@@ -16,6 +16,7 @@ codexSwitch -zai                  Z.ai で起動
 codexSwitch -openrouter           OpenRouter で起動
 codexSwitch handoff <チャット名/ID>  本体の会話を第2インスタンスへ引き継ぐ
 codexSwitch status                第2インスタンスと設定の状態を表示
+codexSwitch version               今の版と、最新かどうかを表示
 codexSwitch update                最新のリリースに更新
 ```
 
@@ -195,10 +196,18 @@ OpenRouter のモデルを足すときは、1モデルにつき次の形で書�
 ### 更新する
 
 ```sh
+codexSwitch version
 codexSwitch update
 ```
 
-GitHub の最新のリリースと比べ、新しい版があれば入れ替えます。最新なら何もしません。設定、API キー、会話には触れません。起動中の第2インスタンスはそのまま動き続けます。
+`version` は、今の版と、GitHub の最新のリリースと比べた結果を表示します。
+
+```text
+$ codexSwitch version
+codexSwitch 0.2.2（新しい版 v0.2.3 があります。codexSwitch update で更新できます）
+```
+
+`update` は、GitHub の最新のリリースと比べ、新しい版があれば入れ替えます。最新なら何もしません。設定、API キー、会話には触れません。起動中の第2インスタンスはそのまま動き続けます。
 
 リリースは版のタグ（`v0.2.0` など）を付けたときだけ作られます。main に入っただけの変更は届きません。
 

@@ -1,6 +1,6 @@
 [package]
 name = "codex-switch"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2024"
 description = "Run a second Codex app instance on Z.ai or OpenRouter and hand conversations over to it (unofficial)"
 license = "MIT"

@@ -161,6 +161,15 @@ mod tests {
             assert!(script.contains(sentence), "script lacks {sentence}");
             assert!(include_str!("handoff.rs").contains(sentence));
         }
+        // So does what `version` says.
+        for sentence in [
+            "があります。codexSwitch update で更新できます",
+            "（最新の版を確認できませんでした）",
+            "より新しい版です",
+        ] {
+            assert!(script.contains(sentence), "script lacks {sentence}");
+            assert!(include_str!("update.rs").contains(sentence));
+        }
         assert!(script.contains(crate::config::MANAGED_END));
         let cfg =
             crate::config::Config::load(Some(std::path::Path::new("/nonexistent/c.toml"))).unwrap();

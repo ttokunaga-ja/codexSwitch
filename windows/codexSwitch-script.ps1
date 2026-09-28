@@ -4,6 +4,7 @@
 #   codexSwitch                                         前回と同じ内容で起動
 #   codexSwitch -zai / -openrouter                      Z.ai / OpenRouter で起動（--model <slug> でモデルも指定できる）
 #   codexSwitch handoff <チャット名/ID> [-zai | -openrouter]   本体の会話を引き継ぐ（チャット名は引用符なしでよい）
+#   codexSwitch version                                 今の版と、最新かどうかを表示する
 #   codexSwitch update                                  最新のリリースに更新する
 #
 # codexSwitch.exe と同じ動作をする。スマート アプリ コントロールなどで
@@ -12,7 +13,7 @@
 $ErrorActionPreference = 'Stop'
 
 # The same version as codexSwitch.exe (a test in the Rust code keeps them equal).
-$version = '0.2.2'
+$version = '0.2.3'
 $repo = 'ttokunaga-ja/codexSwitch'
 
 $sidecarHome = Join-Path $env:USERPROFILE '.codex-switch'
@@ -927,14 +928,29 @@ function Listed-Hash($sums, $name) {
   $null
 }
 
+# The latest release's tag, such as v0.2.3.
+function Latest-Release {
+  $release = $json.DeserializeObject([Text.Encoding]::UTF8.GetString((Download "https://api.github.com/repos/$repo/releases/latest")))
+  $tag = [string](JGet $release 'tag_name')
+  if ($tag -notmatch '^v\d+\.\d+\.\d+$') { throw "最新のリリースの版を読み取れません: $tag" }
+  $tag
+}
+
+# This version, and how it stands against the latest release.
+function Show-Version {
+  try { $tag = Latest-Release } catch { Fail "codexSwitch $version（最新の版を確認できませんでした）: $($_.Exception.Message)" }
+  $latest = [version]$tag.Substring(1)
+  $standing = if ([version]$version -lt $latest) { "新しい版 $tag があります。codexSwitch update で更新できます" }
+    elseif ([version]$version -eq $latest) { '最新です' } else { "最新のリリース $tag より新しい版です" }
+  Say "codexSwitch $version（$standing）"
+}
+
 # Replaces this script and codexSwitch.cmd with the latest GitHub release.
 # Releases are built by CI from version tags, so changes on main never reach here.
 function Update {
   Step '最新の版を確認しています'
-  $release = $json.DeserializeObject([Text.Encoding]::UTF8.GetString((Download "https://api.github.com/repos/$repo/releases/latest")))
-  $tag = [string](JGet $release 'tag_name')
-  if ($tag -notmatch '^v(\d+\.\d+\.\d+)$') { Fail "最新のリリースの版を読み取れません: $tag" }
-  $latest = $Matches[1]
+  try { $tag = Latest-Release } catch { Fail $_.Exception.Message }
+  $latest = $tag.Substring(1)
   if ([version]$latest -le [version]$version) { Say "最新です（v$version）"; return }
   Step "v$version → $tag に更新します"
   $base = "https://github.com/$repo/releases/download/$tag"
@@ -964,6 +980,11 @@ $command = if ($args.Count) { [string]$args[0] } else { '' }
 if ($command -eq 'init') {
   if ($args.Count -gt 1) { Fail 'init は引数を取りません' }
   Init
+  exit 0
+}
+if ($command -eq 'version') {
+  if ($args.Count -gt 1) { Fail 'version は引数を取りません' }
+  Show-Version
   exit 0
 }
 if ($command -eq 'update') {
@@ -1001,14 +1022,17 @@ for ($i = 0; $i -lt $args.Count; $i++) {
     $i++
     $model = [string]$args[$i]
   } elseif ($arg -in '-h', '--help', '/?') {
-    Get-Content $PSCommandPath -Encoding UTF8 | Select-Object -Skip 2 -First 5 | ForEach-Object { $_.Substring(2) }
+    Get-Content $PSCommandPath -Encoding UTF8 | Select-Object -Skip 2 -First 6 | ForEach-Object { $_.Substring(2) }
+    exit 0
+  } elseif ($arg -in '-V', '--version') {
+    Say "codexSwitch $version"
     exit 0
   } elseif ($arg -match '^-([A-Za-z0-9][A-Za-z0-9_-]+)$' -and -not $provider) {
     $provider = $Matches[1].ToLower()
   } elseif ($arg -eq 'status') {
     Fail 'status には codexSwitch.exe が必要です。このスクリプト版は準備（init）、起動、引き継ぎ（handoff）、更新（update）を行います'
   } else {
-    Fail "不明な引数です: $arg（使い方: codexSwitch init | codexSwitch [-zai | -openrouter] [--model <slug>] | codexSwitch handoff <チャット名/ID> [-zai | -openrouter] | codexSwitch update）"
+    Fail "不明な引数です: $arg（使い方: codexSwitch init | codexSwitch [-zai | -openrouter] [--model <slug>] | codexSwitch handoff <チャット名/ID> [-zai | -openrouter] | codexSwitch version | codexSwitch update）"
   }
 }
 if ($provider -and -not $providers.Contains($provider)) { Fail "-$provider は使えません。-zai か -openrouter を指定してください" }
