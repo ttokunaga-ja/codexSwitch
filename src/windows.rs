@@ -98,6 +98,25 @@ mod imp {
 
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn ProcessIdToSessionId(process_id: u32, session_id: *mut u32) -> i32;
+    }
+
+    /// Session 0 is where services and SSH logins run. The package refuses to
+    /// start the app from there, and it would never reach the screen anyway.
+    pub fn assert_desktop() -> Result<()> {
+        let mut session = u32::MAX;
+        // SAFETY: a plain Win32 call with a valid out pointer.
+        let ok = unsafe { ProcessIdToSessionId(std::process::id(), &mut session) } != 0;
+        if ok && session == 0 {
+            bail!(
+                "サインイン中のデスクトップのターミナルから実行してください。SSH などから起動すると、アプリは画面に表示されません"
+            );
+        }
+        Ok(())
+    }
+
     pub struct Package {
         pub install_location: PathBuf,
         pub family_name: String,
@@ -105,7 +124,13 @@ mod imp {
     }
 
     fn powershell(script: &str) -> Result<String> {
-        let script = format!("[Console]::OutputEncoding = [Text.Encoding]::UTF8\n{script}");
+        // Only the error's message reaches stderr: an uncaught error, or a
+        // progress bar, would come out as CLIXML.
+        let script = format!(
+            "[Console]::OutputEncoding = [Text.Encoding]::UTF8\n\
+             $ProgressPreference = 'SilentlyContinue'\n\
+             try {{\n{script}\n}} catch {{ [Console]::Error.WriteLine($_.Exception.Message); exit 1 }}"
+        );
         let out = Command::new("powershell.exe")
             .args([
                 "-NoProfile",

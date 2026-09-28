@@ -29,6 +29,11 @@ struct Plan<'a> {
 /// `provider` comes from `-zai` / `-openrouter`. Without it, the conversation
 /// goes to what the sidecar runs now, model included, like a plain launch.
 pub fn run(cfg: &Config, query: &str, provider: Option<String>) -> Result<()> {
+    sidecar::assert_desktop()?;
+    // A mistyped -zai / -openrouter is reported before anything is searched.
+    if let Some(name) = &provider {
+        cfg.provider(name)?;
+    }
     let conn = threads::open(&cfg.source_home)?;
     let thread = resolve(&conn, query)?;
     let chain = rollout::chain(&conn, &thread)?;

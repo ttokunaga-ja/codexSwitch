@@ -142,6 +142,13 @@ pub fn set_active(cfg: &Config, p: &Provider, model: &str) -> Result<()> {
     Ok(())
 }
 
+/// Refuses to go on where the app could not be shown (Windows only).
+pub fn assert_desktop() -> Result<()> {
+    #[cfg(windows)]
+    crate::windows::assert_desktop()?;
+    Ok(())
+}
+
 /// Brings a running sidecar's window to the front. The app allows one
 /// instance per user-data dir, so the new process exits at once and hands
 /// over to the running one, which then opens its window.

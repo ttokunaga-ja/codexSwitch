@@ -162,6 +162,7 @@ fn run(cli: Cli) -> Result<()> {
 /// Starts the sidecar. A running sidecar is never stopped here: quitting is
 /// left to the app's own UI, so nothing running in it is cut off.
 fn launch(cfg: &Config, provider: Option<String>, model: Option<String>) -> Result<()> {
+    sidecar::assert_desktop()?;
     let active = sidecar::active(cfg)?;
     let p = cfg.provider(provider.as_deref().unwrap_or(&active.provider))?;
     // Without a provider, start exactly what ran last time.
