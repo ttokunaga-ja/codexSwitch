@@ -12,7 +12,7 @@
 $ErrorActionPreference = 'Stop'
 
 # The same version as codexSwitch.exe (a test in the Rust code keeps them equal).
-$version = '0.2.1'
+$version = '0.2.2'
 $repo = 'ttokunaga-ja/codexSwitch'
 
 $sidecarHome = Join-Path $env:USERPROFILE '.codex-switch'

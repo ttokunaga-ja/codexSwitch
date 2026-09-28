@@ -95,10 +95,14 @@ pub fn run(cfg: &Config, query: &str, provider: Option<String>) -> Result<()> {
     println!("\n完了しました。");
     println!("  会話: {}", plan.name);
     println!("  ID  : {new_id}");
-    println!(
-        "  CLI で続ける場合: CODEX_HOME={} codex resume {new_id}",
-        ui::tilde(&cfg.sidecar_home)
-    );
+    // On Windows the app's codex cannot be run from a shell, so there is no
+    // command line to show.
+    if !cfg!(windows) {
+        println!(
+            "  CLI で続ける場合: CODEX_HOME={} codex resume {new_id}",
+            ui::tilde(&cfg.sidecar_home)
+        );
+    }
     Ok(())
 }
 
