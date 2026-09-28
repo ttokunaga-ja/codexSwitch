@@ -1,0 +1,67 @@
+name: release
+
+# Pushing a version tag (vX.Y.Z) builds the binaries and publishes them as a
+# GitHub release, which is what install.sh, install.ps1 and
+# `codexSwitch update` download.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ runner.os == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - name: The tag matches the version
+        shell: bash
+        run: test "${GITHUB_REF_NAME#v}" = "$(cargo pkgid | sed 's/.*[#@]//')"
+      - run: cargo test --locked
+      - name: Build (macOS, Apple silicon and Intel in one binary)
+        if: runner.os == 'macOS'
+        run: |
+          cargo build --release --locked --target aarch64-apple-darwin
+          cargo build --release --locked --target x86_64-apple-darwin
+          mkdir dist
+          lipo -create -output dist/codexSwitch-macos \
+            target/aarch64-apple-darwin/release/codexSwitch \
+            target/x86_64-apple-darwin/release/codexSwitch
+          codesign --force --sign - dist/codexSwitch-macos
+          dist/codexSwitch-macos --version
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cargo build --release --locked
+          mkdir dist
+          cp target/release/codexSwitch.exe dist/codexSwitch-windows-x64.exe
+          cp windows/codexSwitch.cmd windows/codexSwitch-script.ps1 dist/
+          dist/codexSwitch-windows-x64.exe --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ runner.os }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - run: cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME" dist/*
+          --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes

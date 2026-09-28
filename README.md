@@ -16,6 +16,7 @@ codexSwitch -zai                  Z.ai で起動
 codexSwitch -openrouter           OpenRouter で起動
 codexSwitch handoff <チャット名/ID>  本体の会話を第2インスタンスへ引き継ぐ
 codexSwitch status                第2インスタンスと設定の状態を表示
+codexSwitch update                最新のリリースに更新
 ```
 
 macOS と Windows で同じコマンドです。
@@ -39,7 +40,6 @@ Codex は `CODEX_HOME` ごとに**接続先（`model_provider`）を1つしか�
   - macOS: `/Applications/ChatGPT.app`
   - Windows: Microsoft Store 版（MSIX パッケージ `OpenAI.Codex`）
 - Z.ai Coding Plan か OpenRouter の API キー（使う方だけ）
-- Rust（macOS と、Windows で exe 版をビルドする場合）
 
 ## はじめかた
 
@@ -47,22 +47,27 @@ Codex は `CODEX_HOME` ごとに**接続先（`model_provider`）を1つしか�
 
 ### 1. インストールする
 
-macOS:
+[Releases](https://github.com/ttokunaga-ja/codexSwitch/releases) のビルド済みのファイルを入れます。Rust は要りません。
+
+macOS（ターミナル）:
 
 ```sh
-git clone https://github.com/ttokunaga-ja/codexSwitch.git
-cd codexSwitch
-./install.sh            # ~/.local/bin/codexSwitch に入ります
+curl -fsSL https://raw.githubusercontent.com/ttokunaga-ja/codexSwitch/main/install.sh | sh
 ```
 
-Windows: 次のどちらか一方を、PATH の通ったフォルダ（例: `%USERPROFILE%\.local\bin`）に置きます。
+`~/.local/bin/codexSwitch` に入ります。PATH に入っていなければ、足し方を表示します。
 
-- **exe 版**：MSVC 版の Rust（`stable-x86_64-pc-windows-msvc`）で `cargo build --release` した `target\release\codexSwitch.exe`、または GitHub Actions の成果物（`codexSwitch-Windows`）
-- **スクリプト版**：`windows\codexSwitch.cmd` と `windows\codexSwitch-script.ps1` の2つ。準備（`init`）、起動、会話の引き継ぎ（`handoff`）ができます（状態表示の `status` は exe 版だけ）。スマート アプリ コントロールで exe が止められる環境向けです
+Windows（PowerShell）:
 
-  ```powershell
-  Copy-Item windows\codexSwitch.cmd, windows\codexSwitch-script.ps1 "$env:USERPROFILE\.local\bin"
-  ```
+```powershell
+irm https://raw.githubusercontent.com/ttokunaga-ja/codexSwitch/main/install.ps1 | iex
+```
+
+`%USERPROFILE%\.local\bin\codexSwitch.exe` に入り、そのフォルダを PATH に足します。新しく開いたターミナルから使えます。
+
+スマート アプリ コントロールに exe を止められたときは、代わりに**スクリプト版**（`codexSwitch.cmd` と `codexSwitch-script.ps1`）を入れます。準備（`init`）、起動、会話の引き継ぎ（`handoff`）、更新（`update`）ができます（状態表示の `status` は exe 版だけ）。exe を使いたいときは、[スマート アプリ コントロール](#スマート-アプリ-コントロール)を見てください。
+
+どちらも、ダウンロードしたファイルは Releases の `SHA256SUMS` と照合してから置きます。ソースからビルドする場合は `cargo build --release --locked` です（Windows は MSVC 版の Rust）。
 
 ### 2. 準備する
 
@@ -187,6 +192,16 @@ OpenRouter のモデルを足すときは、1モデルにつき次の形で書�
 
 ## 使い方
 
+### 更新する
+
+```sh
+codexSwitch update
+```
+
+GitHub の最新のリリースと比べ、新しい版があれば入れ替えます。最新なら何もしません。設定、API キー、会話には触れません。起動中の第2インスタンスはそのまま動き続けます。
+
+リリースは版のタグ（`v0.2.0` など）を付けたときだけ作られます。main に入っただけの変更は届きません。
+
 ### 状態を見る
 
 ```text
@@ -264,7 +279,7 @@ codexSwitch handoff <チャット名/ID> -openrouter
 ## 引き継ぎで行うこと
 
 1. 本体（`~/.codex`）から会話を探す（読み取り専用）
-2. 会話ファイルを第2インスタンスへコピーする。フォークした会話なら、フォーク元までたどってすべてコピーする。コピー後はハッシュで検証する
+2. 会話ファイルを第2インスタンスへコピーする。フォークした会話なら、フォーク元までたどってすべてコピーする。本体のアプリで開いたままの会話も、書き終わった行までをコピーする。コピー後は読み返して検証する
 3. 確認のうえ、第2インスタンスが起動中なら、アプリの画面から終了されるのを待つ
 4. `app-server` の `thread/fork` で、引き継ぎ先（`-zai` / `-openrouter`）とモデルの会話を作る
 5. 名前を付け、最初のメッセージを送る
@@ -332,7 +347,7 @@ Windows 版のアプリは MSIX パッケージなので、macOS とは次の点
 - **codex の実行ファイル**：パッケージ内の `codex.exe` は外から実行できない（Access is denied）ため、アプリの版ごとに `%LOCALAPPDATA%\codex-switch\` へ複製して使います（初回のみ約300MB）
 - **閉じる・終了する**：×ボタンで閉じても、アプリは通知領域に残って動き続けます。終了は通知領域のアイコンのメニューから行います。会話の引き継ぎで第2インスタンスを止める必要があるときも、この方法で終了されるのを待ちます
 - **実行する場所**：サインイン中のデスクトップのターミナルから実行してください。SSH などから実行すると、アプリは起動しても画面に表示されません（スクリプト版は、この場合エラーで止まります）
-- **スマート アプリ コントロール**：オンの環境では、署名のない `codexSwitch.exe` が Windows によって止められることがあります（終了コード 4551）。判定はファイルごとのため、版によって通ったり止められたりします。止められる場合は、スクリプト版を使ってください（準備、起動、会話の引き継ぎができます）
+- **スマート アプリ コントロール**：オンの環境では、exe が止められることがあります（[下記](#スマート-アプリ-コントロール)）
 
 Windows の実機で確認したこと:
 
@@ -344,8 +359,26 @@ Windows の実機で確認したこと:
 - スクリプト版の `handoff`：引用符なしのチャット名での検索、確認、第2インスタンスの終了待ち、会話ファイルのコピー、フォークと最初のメッセージ（元の会話の内容を引き継いでいることを返答で確認）、再起動までの通し実行
 - スクリプト版の `init`：設定とモデル一覧の作成、Z.ai のモデル一覧の取得（Codex が読み込めることも確認）、2回目は何も変えないこと、codexSwitch が作っていない設定を書き換えずに止まること。キーの貼り付け（画面に表示しない入力）は、macOS の Rust 版でのみ確認しています
 - 読み取り専用の最初のメッセージでコマンドが起動されず、ファイルも作られないこと
+- スクリプト版で、本体のアプリが開いたまま（書き込み用に開いている）の会話ファイルを読み、コピーできること
 
 スマート アプリ コントロールに止められたため、最終版の `codexSwitch.exe` での通し実行（終了の待機、最初のメッセージの完了からプロジェクト割り当て、再起動まで）は未確認です
+
+### スマート アプリ コントロール
+
+オンの環境では、署名のない `codexSwitch.exe` が Windows に止められることがあります（終了コード 4551）。判定はファイルごとのため、版によって通ったり止められたりします。アプリごとに許可する方法はありません。
+
+- **そのまま使う**：スクリプト版を使います。インストールで exe が止められたときは、自動でスクリプト版が入ります
+- **exe を使う**：「Windows セキュリティ」→「アプリとブラウザー コントロール」→「スマート アプリ コントロールの設定」で「オフ」にしてから、インストールをやり直します。2026年4月の累積更新（KB5083769）以降は、あとからオンに戻せます。それより前の Windows では、オフにすると Windows を再インストールするまで戻せません。画面の説明を確かめてから切り替えてください
+
+オフにしても、Microsoft Defender のウイルス対策や SmartScreen は動き続けます。管理された PC では、管理者の方針に従ってください。
+
+## リリースのしかた（開発者向け）
+
+1. `Cargo.toml` の `version` と、`windows/codexSwitch-script.ps1` の `$version` を同じ値に上げる（テストが一致を確かめます）
+2. main に push し、CI が通ることを確かめる
+3. `git tag v<版> && git push origin v<版>`
+
+タグを push すると、GitHub Actions（`release.yml`）がタグと版の一致を確かめ、macOS 用（Apple シリコンと Intel をまとめたもの）と Windows 用をビルドして、`SHA256SUMS` とスクリプト版の2ファイルと一緒に Release として公開します。
 
 ## ライセンス
 

@@ -13,6 +13,7 @@ mod setup;
 mod sidecar;
 mod threads;
 mod ui;
+mod update;
 // The script builders are unit-tested everywhere but only run on Windows.
 #[cfg_attr(not(windows), allow(dead_code))]
 mod windows;
@@ -32,13 +33,15 @@ use std::process::ExitCode;
     override_usage = "codexSwitch [-zai | -openrouter] [--model <MODEL>]\n       \
         codexSwitch init\n       \
         codexSwitch handoff <チャット名/ID> [-zai | -openrouter]\n       \
-        codexSwitch status",
+        codexSwitch status\n       \
+        codexSwitch update",
     after_help = "例:\n  \
         codexSwitch init                 最初の準備（設定とモデル一覧を作り、API キーの置き場所を案内する）\n  \
         codexSwitch                      前回と同じ内容で起動する\n  \
         codexSwitch -zai                 Z.ai で起動する\n  \
         codexSwitch -openrouter          OpenRouter で起動する\n  \
-        codexSwitch handoff <チャット名/ID>  本体の会話を引き継ぐ\n\n\
+        codexSwitch handoff <チャット名/ID>  本体の会話を引き継ぐ\n  \
+        codexSwitch update               最新のリリースに更新する\n\n\
         終了はアプリの画面から行います（起動中に -zai / -openrouter を切り替えるときも、先に終了します）。"
 )]
 struct Cli {
@@ -71,6 +74,8 @@ enum Command {
     },
     /// 第2インスタンスと設定の状態を表示する
     Status,
+    /// GitHub の最新のリリースに更新する
+    Update,
 }
 
 /// Options that take a value: the word after them is never a provider flag.
@@ -120,6 +125,9 @@ fn main() -> ExitCode {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
     }
 
+    #[cfg(windows)]
+    update::remove_leftover();
+
     let cli = Cli::parse_from(expand_provider_flags(std::env::args_os()));
     match run(cli) {
         Ok(()) => ExitCode::SUCCESS,
@@ -138,14 +146,16 @@ fn run(cli: Cli) -> Result<()> {
             "-zai / -openrouter はサブコマンドの後に書いてください（例: codexSwitch handoff <チャット名/ID> -zai）"
         );
     }
-    let cfg = Config::load(cli.config.as_deref())?;
+    let cfg = || Config::load(cli.config.as_deref());
     match cli.command {
-        None => launch(&cfg, cli.provider, cli.model),
-        Some(Command::Init) => setup::run(&cfg),
+        None => launch(&cfg()?, cli.provider, cli.model),
+        Some(Command::Init) => setup::run(&cfg()?),
         Some(Command::Handoff { query, provider }) => {
-            handoff::run(&cfg, &query.join(" "), provider)
+            handoff::run(&cfg()?, &query.join(" "), provider)
         }
-        Some(Command::Status) => status(&cfg),
+        Some(Command::Status) => status(&cfg()?),
+        // Needs no configuration, so a broken one cannot block a fix.
+        Some(Command::Update) => update::run(),
     }
 }
 

@@ -4,7 +4,6 @@ use crate::threads::{self, Thread};
 use anyhow::{Context, Result, bail};
 use rusqlite::Connection;
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
@@ -79,7 +78,8 @@ pub enum Copied {
 }
 
 /// Copies `path` (inside `src_home`) to the same relative location in
-/// `dst_home`, verifying the result by hash. An identical existing file is kept.
+/// `dst_home`, verifying the result by reading it back. An identical existing
+/// file is kept.
 pub fn copy_into(src_home: &Path, dst_home: &Path, path: &Path) -> Result<Copied> {
     let rel = relative(path, src_home, cfg!(windows)).with_context(|| {
         format!(
@@ -89,21 +89,36 @@ pub fn copy_into(src_home: &Path, dst_home: &Path, path: &Path) -> Result<Copied
         )
     })?;
     let dst = dst_home.join(rel);
-    let src_hash = sha256(path)?;
-    if dst.is_file() && sha256(&dst)? == src_hash {
+    let data = snapshot(path)?;
+    if dst.is_file() && fs::read(&dst)? == data {
         return Ok(Copied::AlreadyPresent);
     }
     if let Some(dir) = dst.parent() {
         fs::create_dir_all(dir)?;
     }
     let tmp = dst.with_extension("jsonl.codex-switch.tmp");
-    fs::copy(path, &tmp).with_context(|| format!("コピーに失敗しました: {}", path.display()))?;
-    if sha256(&tmp)? != src_hash {
+    fs::write(&tmp, &data).with_context(|| format!("コピーに失敗しました: {}", path.display()))?;
+    if fs::read(&tmp)? != data {
         let _ = fs::remove_file(&tmp);
-        bail!("コピー後のハッシュが一致しません: {}", path.display());
+        bail!("コピーした内容が一致しません: {}", path.display());
     }
     fs::rename(&tmp, &dst)?;
     Ok(Copied::Copied)
+}
+
+/// The rollout up to its last complete line. The main app keeps an open
+/// conversation's rollout open and appends to it, so a copy taken at any
+/// moment must not end in half a line. (Rust opens files with full sharing
+/// on Windows, so the app's handle does not get in the way.)
+fn snapshot(path: &Path) -> Result<Vec<u8>> {
+    let mut data = Vec::new();
+    File::open(path)
+        .and_then(|mut f| f.read_to_end(&mut data))
+        .with_context(|| format!("会話ファイルを読めません: {}", path.display()))?;
+    if let Some(end) = data.iter().rposition(|&b| b == b'\n') {
+        data.truncate(end + 1);
+    }
+    Ok(data)
 }
 
 /// `path` relative to `base`. Windows paths are case-insensitive, and the
@@ -127,23 +142,32 @@ fn relative(path: &Path, base: &Path, windows: bool) -> Option<PathBuf> {
         .then(|| PathBuf::from(&rest[1..]))
 }
 
-fn sha256(path: &Path) -> Result<Vec<u8>> {
-    let mut file = File::open(path)?;
-    let mut hasher = Sha256::new();
-    let mut buf = vec![0u8; 1 << 20];
-    loop {
-        let n = file.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-    Ok(hasher.finalize().to_vec())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn copies_complete_lines_and_keeps_an_identical_copy() {
+        let root =
+            std::env::temp_dir().join(format!("codex-switch-rollout-{}", std::process::id()));
+        let (src_home, dst_home) = (root.join("src"), root.join("dst"));
+        let path = src_home.join("sessions").join("a.jsonl");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let copy = || copy_into(&src_home, &dst_home, &path).unwrap();
+        let copied = || fs::read(dst_home.join("sessions").join("a.jsonl")).unwrap();
+
+        // The app is halfway through writing the second line.
+        fs::write(&path, b"{\"a\":1}\n{\"b\":").unwrap();
+        assert!(matches!(copy(), Copied::Copied));
+        assert_eq!(copied(), b"{\"a\":1}\n");
+        assert!(matches!(copy(), Copied::AlreadyPresent));
+
+        // Once the line is finished, the copy follows.
+        fs::write(&path, b"{\"a\":1}\n{\"b\":2}\n").unwrap();
+        assert!(matches!(copy(), Copied::Copied));
+        assert_eq!(copied(), b"{\"a\":1}\n{\"b\":2}\n");
+        fs::remove_dir_all(&root).unwrap();
+    }
 
     #[test]
     fn relative_paths() {

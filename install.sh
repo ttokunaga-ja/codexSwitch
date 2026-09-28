@@ -1,25 +1,36 @@
 #!/bin/sh
-# Builds codexSwitch and installs it into ~/.local/bin (override with BIN_DIR).
+# Installs the latest codexSwitch release into ~/.local/bin (override with BIN_DIR).
 #
-#   ./install.sh
-#   BIN_DIR=/usr/local/bin ./install.sh
+#   curl -fsSL https://raw.githubusercontent.com/ttokunaga-ja/codexSwitch/main/install.sh | sh
+#
+# After this, `codexSwitch update` keeps it up to date.
 set -eu
 
-cd "$(dirname "$0")"
+REPO=ttokunaga-ja/codexSwitch
+ASSET=codexSwitch-macos
+BIN_DIR="${BIN_DIR:-$HOME/.local/bin}"
 
-if ! command -v cargo >/dev/null 2>&1; then
-  echo "install.sh: cargo が見つかりません。https://rustup.rs から Rust を入れてください" >&2
+if [ "$(uname -s)" != Darwin ]; then
+  echo "install.sh: macOS 用です。Windows は README の手順を見てください" >&2
   exit 1
 fi
 
-BIN_DIR="${BIN_DIR:-$HOME/.local/bin}"
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+base="https://github.com/$REPO/releases/latest/download"
+curl -fsSL -o "$tmp/$ASSET" "$base/$ASSET"
+curl -fsSL -o "$tmp/SHA256SUMS" "$base/SHA256SUMS"
+if ! (cd "$tmp" && grep " \*\{0,1\}$ASSET\$" SHA256SUMS | shasum -a 256 -c - >/dev/null); then
+  echo "install.sh: ダウンロードしたファイルのハッシュが一致しません" >&2
+  exit 1
+fi
 
-cargo build --release --locked
 mkdir -p "$BIN_DIR"
-install -m 755 target/release/codexSwitch "$BIN_DIR/codexSwitch"
+chmod 755 "$tmp/$ASSET"
+mv -f "$tmp/$ASSET" "$BIN_DIR/codexSwitch"
 
 echo "installed: $BIN_DIR/codexSwitch ($("$BIN_DIR/codexSwitch" --version))"
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
-  *) echo "注意: $BIN_DIR が PATH に入っていません" >&2 ;;
+  *) echo "注意: $BIN_DIR が PATH に入っていません。~/.zshrc に次の行を足してください: export PATH=\"$BIN_DIR:\$PATH\"" >&2 ;;
 esac

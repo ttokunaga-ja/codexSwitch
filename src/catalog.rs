@@ -149,6 +149,9 @@ mod tests {
 
         // Compared with runs of whitespace collapsed: the script aligns columns.
         let flat = script.split_whitespace().collect::<Vec<_>>().join(" ");
+        // Both are released together, and `update` compares against this.
+        let version = format!("$version = '{}'", env!("CARGO_PKG_VERSION"));
+        assert!(script.contains(&version), "script lacks {version}");
         assert!(script.contains(crate::config::MANAGED_BEGIN));
         // The first message of a handoff is the same in both.
         for sentence in [

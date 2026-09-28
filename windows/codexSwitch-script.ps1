@@ -4,11 +4,16 @@
 #   codexSwitch                                         前回と同じ内容で起動
 #   codexSwitch -zai / -openrouter                      Z.ai / OpenRouter で起動（--model <slug> でモデルも指定できる）
 #   codexSwitch handoff <チャット名/ID> [-zai | -openrouter]   本体の会話を引き継ぐ（チャット名は引用符なしでよい）
+#   codexSwitch update                                  最新のリリースに更新する
 #
 # codexSwitch.exe と同じ動作をする。スマート アプリ コントロールなどで
 # 署名のない exe を実行できない Windows 向け。codexSwitch.cmd から呼ばれる。
 # 状態表示（status）は exe だけ。設定ファイル（~/.config/codex-switch/config.toml）は読まず、既定値で動く。
 $ErrorActionPreference = 'Stop'
+
+# The same version as codexSwitch.exe (a test in the Rust code keeps them equal).
+$version = '0.2.0'
+$repo = 'ttokunaga-ja/codexSwitch'
 
 $sidecarHome = Join-Path $env:USERPROFILE '.codex-switch'
 $userData = Join-Path $env:LOCALAPPDATA 'codex-switch\user-data'
@@ -499,6 +504,10 @@ function JGet($o) {
   , $o
 }
 
+# The main app keeps an open conversation's rollout open for writing, so
+# rollouts are opened with sharing that lets that writer be.
+function Open-Shared($path) { [IO.File]::Open((Strip-Verbatim $path), 'Open', 'Read', 'ReadWrite, Delete') }
+
 function Strip-Verbatim($path) {
   if ($path.StartsWith('\\?\UNC\')) { return '\\' + $path.Substring(8) }
   if ($path.StartsWith('\\?\')) { return $path.Substring(4) }
@@ -581,7 +590,7 @@ function Get-Chain($db, $thread) {
   $paths = @($thread.Rollout)
   $current = $thread.Rollout
   while ($true) {
-    $reader = New-Object IO.StreamReader((Strip-Verbatim $current), [Text.Encoding]::UTF8)
+    $reader = New-Object IO.StreamReader((Open-Shared $current), [Text.Encoding]::UTF8)
     try { $first = $reader.ReadLine() } finally { $reader.Close() }
     $meta = $json.DeserializeObject($first)
     $parentId = if ((JGet $meta 'type') -eq 'session_meta') { JGet $meta 'payload' 'forked_from_id' }
@@ -598,31 +607,52 @@ function Get-Chain($db, $thread) {
 function Last-Usage($paths) {
   foreach ($path in $paths) {
     $found = $null
-    foreach ($line in [IO.File]::ReadLines((Strip-Verbatim $path))) {
-      if (-not $line.Contains('"token_count"')) { continue }
-      try { $n = JGet ($json.DeserializeObject($line)) 'payload' 'info' 'last_token_usage' 'input_tokens' } catch { continue }
-      if ($null -ne $n) { $found = [long]$n }
-    }
+    $reader = New-Object IO.StreamReader((Open-Shared $path), [Text.Encoding]::UTF8)
+    try {
+      while ($null -ne ($line = $reader.ReadLine())) {
+        if (-not $line.Contains('"token_count"')) { continue }
+        try { $n = JGet ($json.DeserializeObject($line)) 'payload' 'info' 'last_token_usage' 'input_tokens' } catch { continue }
+        if ($null -ne $n) { $found = [long]$n }
+      }
+    } finally { $reader.Close() }
     if ($null -ne $found) { return $found }
   }
   $null
 }
 
-# Copies a rollout to the same place under the sidecar's home, checked by hash.
+function Sha256($bytes) {
+  $h = [Security.Cryptography.SHA256]::Create()
+  try { [BitConverter]::ToString($h.ComputeHash([byte[]]$bytes)).Replace('-', '').ToLowerInvariant() } finally { $h.Dispose() }
+}
+
+# The rollout up to its last complete line: the main app may be halfway
+# through appending one.
+function Read-Snapshot($path) {
+  $buffer = New-Object IO.MemoryStream
+  $stream = Open-Shared $path
+  try { $stream.CopyTo($buffer) } finally { $stream.Close() }
+  $end = [Array]::LastIndexOf($buffer.ToArray(), [byte]10)
+  if ($end -ge 0) { $buffer.SetLength($end + 1) }
+  , $buffer.ToArray()
+}
+
+# Copies a rollout to the same place under the sidecar's home, verified by
+# reading it back. An identical existing copy is kept.
 function Copy-Rollout($path) {
   $src = Strip-Verbatim $path
   $base = (Strip-Verbatim $sourceHome).TrimEnd('\', '/')
   $inside = $src.Length -gt $base.Length -and $src.Substring(0, $base.Length) -ieq $base -and $src[$base.Length] -in '\', '/'
   if (-not $inside) { throw "会話ファイルが $sourceHome の外にあります: $src" }
   $dst = Join-Path $sidecarHome $src.Substring($base.Length + 1)
-  $hash = (Get-FileHash -LiteralPath $src -Algorithm SHA256).Hash
-  if ((Test-Path -LiteralPath $dst) -and (Get-FileHash -LiteralPath $dst -Algorithm SHA256).Hash -eq $hash) { return 'AlreadyPresent' }
+  $data = Read-Snapshot $src
+  $hash = Sha256 $data
+  if ((Test-Path -LiteralPath $dst) -and (Sha256 ([IO.File]::ReadAllBytes($dst))) -eq $hash) { return 'AlreadyPresent' }
   New-Item -ItemType Directory -Force (Split-Path $dst) | Out-Null
   $tmp = "$dst.codex-switch.tmp"
-  Copy-Item -LiteralPath $src $tmp -Force
-  if ((Get-FileHash -LiteralPath $tmp -Algorithm SHA256).Hash -ne $hash) {
+  [IO.File]::WriteAllBytes($tmp, $data)
+  if ((Sha256 ([IO.File]::ReadAllBytes($tmp))) -ne $hash) {
     Remove-Item -LiteralPath $tmp -Force
-    throw "コピー後のハッシュが一致しません: $src"
+    throw "コピーした内容が一致しません: $src"
   }
   Move-Item -LiteralPath $tmp $dst -Force
   'Copied'
@@ -660,7 +690,7 @@ function Start-AppServer($codex, $cwd) {
   $script:pending = $null
   $script:backlog = New-Object Collections.Queue
   $script:nextId = 1
-  Invoke-Rpc 'initialize' @{ clientInfo = @{ name = 'codexSwitch'; version = '0.1.0' } } 60 | Out-Null
+  Invoke-Rpc 'initialize' @{ clientInfo = @{ name = 'codexSwitch'; version = $version } } 60 | Out-Null
 }
 
 # Closing stdin lets the server flush and exit; it is killed only as a last resort.
@@ -883,11 +913,62 @@ function Handoff($query, $provider) {
   Say "  ID  : $newId"
 }
 
+# --- update ---------------------------------------------------------------
+function Download($url) {
+  [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+  , (Invoke-WebRequest -UseBasicParsing -TimeoutSec 300 -Uri $url).RawContentStream.ToArray()
+}
+
+# The hash listed for $name in sha256sum output.
+function Listed-Hash($sums, $name) {
+  foreach ($line in $sums -split "`r?`n") {
+    if ($line -match '^([0-9a-fA-F]{64})\s+\*?(.+?)\s*$' -and $Matches[2] -eq $name) { return $Matches[1].ToLowerInvariant() }
+  }
+  $null
+}
+
+# Replaces this script and codexSwitch.cmd with the latest GitHub release.
+# Releases are built by CI from version tags, so changes on main never reach here.
+function Update {
+  Step '最新の版を確認しています'
+  $release = $json.DeserializeObject([Text.Encoding]::UTF8.GetString((Download "https://api.github.com/repos/$repo/releases/latest")))
+  $tag = [string](JGet $release 'tag_name')
+  if ($tag -notmatch '^v(\d+\.\d+\.\d+)$') { Fail "最新のリリースの版を読み取れません: $tag" }
+  $latest = $Matches[1]
+  if ([version]$latest -le [version]$version) { Say "最新です（v$version）"; return }
+  Step "v$version → $tag に更新します"
+  $base = "https://github.com/$repo/releases/download/$tag"
+  $sums = [Text.Encoding]::UTF8.GetString((Download "$base/SHA256SUMS"))
+  $files = [ordered]@{}
+  foreach ($name in 'codexSwitch-script.ps1', 'codexSwitch.cmd') {
+    $bytes = Download "$base/$name"
+    if ((Sha256 $bytes) -ne (Listed-Hash $sums $name)) { Fail "ダウンロードした $name のハッシュが一致しません" }
+    $files[$name] = $bytes
+  }
+  # The release must be the version it claims, or every update would install it again.
+  $text = [Text.Encoding]::UTF8.GetString($files['codexSwitch-script.ps1'])
+  if ($text -notmatch "(?m)^\`$version = '$([regex]::Escape($latest))'") { Fail "$tag のスクリプトの版が一致しません（今の版はそのままです）" }
+  # PowerShell has read this whole script already, so it can be replaced. cmd
+  # reads a running .cmd as it goes; it is written only when it has changed.
+  foreach ($name in $files.Keys) {
+    $path = Join-Path $PSScriptRoot $name
+    if ((Test-Path -LiteralPath $path) -and (Sha256 ([IO.File]::ReadAllBytes($path))) -eq (Sha256 $files[$name])) { continue }
+    [IO.File]::WriteAllBytes("$path.codex-switch.tmp", $files[$name])
+    Move-Item -LiteralPath "$path.codex-switch.tmp" $path -Force
+  }
+  Step "$tag に更新しました: $PSScriptRoot"
+}
+
 # --- arguments ------------------------------------------------------------
 $command = if ($args.Count) { [string]$args[0] } else { '' }
 if ($command -eq 'init') {
   if ($args.Count -gt 1) { Fail 'init は引数を取りません' }
   Init
+  exit 0
+}
+if ($command -eq 'update') {
+  if ($args.Count -gt 1) { Fail 'update は引数を取りません' }
+  Update
   exit 0
 }
 if ($command -eq 'handoff') {
@@ -920,14 +1001,14 @@ for ($i = 0; $i -lt $args.Count; $i++) {
     $i++
     $model = [string]$args[$i]
   } elseif ($arg -in '-h', '--help', '/?') {
-    Get-Content $PSCommandPath -Encoding UTF8 | Select-Object -Skip 2 -First 4 | ForEach-Object { $_.Substring(2) }
+    Get-Content $PSCommandPath -Encoding UTF8 | Select-Object -Skip 2 -First 5 | ForEach-Object { $_.Substring(2) }
     exit 0
   } elseif ($arg -match '^-([A-Za-z0-9][A-Za-z0-9_-]+)$' -and -not $provider) {
     $provider = $Matches[1].ToLower()
   } elseif ($arg -eq 'status') {
-    Fail 'status には codexSwitch.exe が必要です。このスクリプト版は準備（init）、起動、引き継ぎ（handoff）を行います'
+    Fail 'status には codexSwitch.exe が必要です。このスクリプト版は準備（init）、起動、引き継ぎ（handoff）、更新（update）を行います'
   } else {
-    Fail "不明な引数です: $arg（使い方: codexSwitch init | codexSwitch [-zai | -openrouter] [--model <slug>] | codexSwitch handoff <チャット名/ID> [-zai | -openrouter]）"
+    Fail "不明な引数です: $arg（使い方: codexSwitch init | codexSwitch [-zai | -openrouter] [--model <slug>] | codexSwitch handoff <チャット名/ID> [-zai | -openrouter] | codexSwitch update）"
   }
 }
 if ($provider -and -not $providers.Contains($provider)) { Fail "-$provider は使えません。-zai か -openrouter を指定してください" }
