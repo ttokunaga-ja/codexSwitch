@@ -14,7 +14,7 @@
 $ErrorActionPreference = 'Stop'
 
 # The same version as codexSwitch.exe (a test in the Rust code keeps them equal).
-$version = '0.2.4'
+$version = '0.2.5'
 $repo = 'ttokunaga-ja/codexSwitch'
 
 # Uninstall is handled before loading any provider or application state.
