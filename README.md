@@ -66,7 +66,7 @@ irm https://raw.githubusercontent.com/ttokunaga-ja/codexSwitch/main/install.ps1 
 
 `%USERPROFILE%\.local\bin\codexSwitch.exe` に入り、そのフォルダを PATH に足します。新しく開いたターミナルから使えます。
 
-スマート アプリ コントロールに exe を止められたときは、代わりに**スクリプト版**（`codexSwitch.cmd` と `codexSwitch-script.ps1`）を入れます。準備（`init`）、起動、会話の引き継ぎ（`handoff`）、更新（`update`）ができます（状態表示の `status` は exe 版だけ）。exe を使いたいときは、[スマート アプリ コントロール](#スマート-アプリ-コントロール)を見てください。
+スマート アプリ コントロールに exe を止められたときは、代わりに**スクリプト版**（`codexSwitch.cmd` と `codexSwitch-script.ps1`）を入れます。準備（`init`）、起動、会話の引き継ぎ（`handoff`）、更新（`update`）、アンインストール（`uninstall`）ができます（状態表示の `status` は exe 版だけ）。exe を使いたいときは、[スマート アプリ コントロール](#スマート-アプリ-コントロール)を見てください。
 
 どちらも、ダウンロードしたファイルは Releases の `SHA256SUMS` と照合してから置きます。ソースからビルドする場合は `cargo build --release --locked` です（Windows は MSVC 版の Rust）。
 
@@ -305,6 +305,20 @@ codexSwitch handoff <チャット名/ID> -openrouter
 - **既定の文面**：状況の要約を頼みます。返答を見れば、文脈が正しく渡ったかを確認できます
 
 作業の続きは、アプリの画面で行ってください。引き継いだ会話の権限設定は、元の会話のものを受け継ぎます。作業を再開する前に、画面上の権限設定を確認してください。
+
+## アンインストール
+
+```sh
+codexSwitch uninstall
+```
+
+実際に起動した CLI 本体の絶対パスを表示し、`[y/N]` で確認します。`y`・`yes`・`はい` のどれかを入力した場合だけ削除します。空入力・EOF・その他の回答はキャンセルです。設定が壊れていても実行できます。
+
+exe 版は現在実行中の exe だけ、Windows のスクリプト版は実行中の `codexSwitch-script.ps1` と同じフォルダの `codexSwitch.cmd` だけを削除します。スクリプト版から同じフォルダの exe は削除しません。API キー、設定、会話、キャッシュ、ログ、PATH、共有 bin フォルダは残り、起動中の Codex アプリも終了しません。
+
+Windows の exe 版は、実行中の exe を一意の名前に退避し、CLI 終了後の削除を予約します。「予約」は削除完了ではありません。表示した JSON 記録の `status` が `deleted` なら完了、`failed` なら表示した退避ファイルを確認してください。元の exe パスに後から置いたファイルは削除しません。
+
+古い版や CLI が起動できない場合は、インストール先の `codexSwitch`（Windows は `codexSwitch.exe`、スクリプト版は `codexSwitch.cmd` と `codexSwitch-script.ps1`）を手動で削除します。設定や会話を含むフォルダ全体は削除しないでください。
 
 ## 設定ファイル（任意）
 

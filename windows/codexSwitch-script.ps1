@@ -6,6 +6,7 @@
 #   codexSwitch handoff <チャット名/ID> [-zai | -openrouter]   本体の会話を引き継ぐ（チャット名は引用符なしでよい）
 #   codexSwitch version                                 今の版と、最新かどうかを表示する
 #   codexSwitch update                                  最新のリリースに更新する
+#   codexSwitch uninstall                               このスクリプトと cmd だけを削除（確認あり）
 #
 # codexSwitch.exe と同じ動作をする。スマート アプリ コントロールなどで
 # 署名のない exe を実行できない Windows 向け。codexSwitch.cmd から呼ばれる。
@@ -13,8 +14,59 @@
 $ErrorActionPreference = 'Stop'
 
 # The same version as codexSwitch.exe (a test in the Rust code keeps them equal).
-$version = '0.2.3'
+$version = '0.2.4'
 $repo = 'ttokunaga-ja/codexSwitch'
+
+# Uninstall is handled before loading any provider or application state.
+# PowerShell has already read the script. Direct invocation deletes the pair.
+# The cmd launcher stays intact until PowerShell returns the confirmed-uninstall
+# sentinel; cmd then deletes its own file with an already-read builtin command.
+if ($args.Count -gt 0 -and [string]$args[0] -eq 'uninstall') {
+  if ($args.Count -ne 1) { throw 'uninstall は引数を取りません' }
+  $scriptPath = (Resolve-Path -LiteralPath $PSCommandPath).ProviderPath
+  $cmdPath = Join-Path (Split-Path -Parent $scriptPath) 'codexSwitch.cmd'
+  $targets = @($scriptPath)
+  if (Test-Path -LiteralPath $cmdPath) { $targets += (Resolve-Path -LiteralPath $cmdPath).ProviderPath }
+  $fingerprints = @{}
+  $sha = [Security.Cryptography.SHA256]::Create()
+  try {
+    foreach ($path in $targets) {
+      $item = Get-Item -LiteralPath $path -Force
+      if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw "通常のファイルではないため削除しません: $path"
+      }
+      $fingerprints[$path] = [Convert]::ToBase64String($sha.ComputeHash([IO.File]::ReadAllBytes($path)))
+    }
+    Write-Host '削除する CLI 本体:'
+    foreach ($path in $targets) { Write-Host "  $path" }
+    Write-Host 'exe・API キー・設定・会話・キャッシュ・ログ・PATH・共有 bin ディレクトリは残します。起動中の Codex アプリは終了しません。'
+    [Console]::Write('削除しますか？ [y/N]: ')
+    $answer = [Console]::ReadLine()
+    if ($null -eq $answer -or $answer.Trim() -notmatch '^(?i:y|yes|はい)$') {
+      Write-Host '中止しました。何も削除していません。'
+      exit 0
+    }
+    # Recheck every target before removing either file. Paths never become code.
+    foreach ($path in $targets) {
+      $item = Get-Item -LiteralPath $path -Force
+      if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+          [Convert]::ToBase64String($sha.ComputeHash([IO.File]::ReadAllBytes($path))) -ne $fingerprints[$path]) {
+        throw "確認後にファイルが変わったため削除しません: $path"
+      }
+    }
+    $launcherDeletesCmd = $env:CODEX_SWITCH_UNINSTALL_LAUNCHER -and
+      [String]::Equals($env:CODEX_SWITCH_UNINSTALL_LAUNCHER, $cmdPath, [StringComparison]::OrdinalIgnoreCase)
+    foreach ($path in $targets) {
+      if ($launcherDeletesCmd -and $path -eq $cmdPath) { continue }
+      Remove-Item -LiteralPath $path -Force -ErrorAction Stop
+      if (Test-Path -LiteralPath $path) { throw "削除を確認できません: $path" }
+      Write-Host "削除しました: $path"
+    }
+  } finally { $sha.Dispose() }
+  if ($launcherDeletesCmd) { exit 10 }
+  exit 0
+}
+
 
 $sidecarHome = Join-Path $env:USERPROFILE '.codex-switch'
 $userData = Join-Path $env:LOCALAPPDATA 'codex-switch\user-data'
@@ -1022,7 +1074,7 @@ for ($i = 0; $i -lt $args.Count; $i++) {
     $i++
     $model = [string]$args[$i]
   } elseif ($arg -in '-h', '--help', '/?') {
-    Get-Content $PSCommandPath -Encoding UTF8 | Select-Object -Skip 2 -First 6 | ForEach-Object { $_.Substring(2) }
+    Get-Content $PSCommandPath -Encoding UTF8 | Select-Object -Skip 2 -First 7 | ForEach-Object { $_.Substring(2) }
     exit 0
   } elseif ($arg -in '-V', '--version') {
     Say "codexSwitch $version"
@@ -1032,7 +1084,7 @@ for ($i = 0; $i -lt $args.Count; $i++) {
   } elseif ($arg -eq 'status') {
     Fail 'status には codexSwitch.exe が必要です。このスクリプト版は準備（init）、起動、引き継ぎ（handoff）、更新（update）を行います'
   } else {
-    Fail "不明な引数です: $arg（使い方: codexSwitch init | codexSwitch [-zai | -openrouter] [--model <slug>] | codexSwitch handoff <チャット名/ID> [-zai | -openrouter] | codexSwitch version | codexSwitch update）"
+    Fail "不明な引数です: $arg（使い方: codexSwitch init | codexSwitch [-zai | -openrouter] [--model <slug>] | codexSwitch handoff <チャット名/ID> [-zai | -openrouter] | codexSwitch version | codexSwitch update | codexSwitch uninstall）"
   }
 }
 if ($provider -and -not $providers.Contains($provider)) { Fail "-$provider は使えません。-zai か -openrouter を指定してください" }

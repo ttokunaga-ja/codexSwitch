@@ -13,6 +13,7 @@ mod setup;
 mod sidecar;
 mod threads;
 mod ui;
+mod uninstall;
 mod update;
 // The script builders are unit-tested everywhere but only run on Windows.
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -35,7 +36,8 @@ use std::process::ExitCode;
         codexSwitch handoff <チャット名/ID> [-zai | -openrouter]\n       \
         codexSwitch status\n       \
         codexSwitch version\n       \
-        codexSwitch update",
+        codexSwitch update\n       \
+        codexSwitch uninstall",
     after_help = "例:\n  \
         codexSwitch init                 最初の準備（設定とモデル一覧を作り、API キーの置き場所を案内する）\n  \
         codexSwitch                      前回と同じ内容で起動する\n  \
@@ -43,7 +45,8 @@ use std::process::ExitCode;
         codexSwitch -openrouter          OpenRouter で起動する\n  \
         codexSwitch handoff <チャット名/ID>  本体の会話を引き継ぐ\n  \
         codexSwitch version              今の版と、最新かどうかを表示する\n  \
-        codexSwitch update               最新のリリースに更新する\n\n\
+        codexSwitch update               最新のリリースに更新する\n  \
+        codexSwitch uninstall            CLI 本体だけを削除する（確認あり）\n\n\
         終了はアプリの画面から行います（起動中に -zai / -openrouter を切り替えるときも、先に終了します）。"
 )]
 struct Cli {
@@ -80,6 +83,8 @@ enum Command {
     Version,
     /// GitHub の最新のリリースに更新する
     Update,
+    /// CLI 本体だけを削除する（設定・キー・会話・起動中のアプリは残す）
+    Uninstall,
 }
 
 /// Options that take a value: the word after them is never a provider flag.
@@ -129,9 +134,6 @@ fn main() -> ExitCode {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
     }
 
-    #[cfg(windows)]
-    update::remove_leftover();
-
     let cli = Cli::parse_from(expand_provider_flags(std::env::args_os()));
     match run(cli) {
         Ok(()) => ExitCode::SUCCESS,
@@ -150,6 +152,14 @@ fn run(cli: Cli) -> Result<()> {
             "-zai / -openrouter はサブコマンドの後に書いてください（例: codexSwitch handoff <チャット名/ID> -zai）"
         );
     }
+    if matches!(cli.command, Some(Command::Uninstall)) {
+        return uninstall::run(
+            "codexSwitch",
+            "API キー・設定・会話・キャッシュ・PATH・共有 bin ディレクトリは残します。起動中の Codex アプリは終了しません。",
+        );
+    }
+    #[cfg(windows)]
+    update::remove_leftover();
     let cfg = || Config::load(cli.config.as_deref());
     match cli.command {
         None => launch(&cfg()?, cli.provider, cli.model),
@@ -161,6 +171,7 @@ fn run(cli: Cli) -> Result<()> {
         // These need no configuration, so a broken one cannot block a fix.
         Some(Command::Version) => update::version(),
         Some(Command::Update) => update::run(),
+        Some(Command::Uninstall) => unreachable!("handled before configuration and cleanup"),
     }
 }
 
