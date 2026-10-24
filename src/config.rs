@@ -71,7 +71,7 @@ struct FileConfig {
     providers: BTreeMap<String, FileProvider>,
 }
 
-/// Overrides for `zai` or `openrouter`; anything left out keeps its default.
+/// Overrides for a known provider; anything left out keeps its default.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct FileProvider {
@@ -148,7 +148,7 @@ impl Config {
         for (name, p) in file.providers {
             let Some(d) = providers.get_mut(&name) else {
                 bail!(
-                    "設定ファイル {} の [providers.{name}] は使えません。書けるのは [providers.zai] と [providers.openrouter] だけです",
+                    "設定ファイル {} の [providers.{name}] は使えません。書けるのは [providers.zai]、[providers.openrouter]、[providers.refuseless] だけです",
                     path.display()
                 );
             };
@@ -182,7 +182,9 @@ impl Config {
 
     pub fn provider(&self, name: &str) -> Result<&Provider> {
         self.providers.get(name).with_context(|| {
-            format!("-{name} は使えません。-zai か -openrouter を指定してください")
+            format!(
+                "-{name} は使えません。-zai、-openrouter、-refuseless のいずれかを指定してください"
+            )
         })
     }
 
@@ -210,6 +212,19 @@ fn default_providers(sidecar: &Path) -> BTreeMap<String, Provider> {
             // Codex's endpoint; Claude Code and OpenCode use other ones.
             base_url: "https://api.z.ai/api/v1",
             catalog_url: Some("https://api.z.ai/api/v1/models"),
+        },
+    );
+    m.insert(
+        "refuseless".to_owned(),
+        Provider {
+            name: "refuseless".to_owned(),
+            label: "Refuseless".to_owned(),
+            model: "glm-5.3-abliterated".to_owned(),
+            catalog: sidecar.join("refuseless_models.json"),
+            effort: "low".to_owned(),
+            key_file: keys.join("refuseless.key"),
+            base_url: "https://api.refuseless.com/v1",
+            catalog_url: None,
         },
     );
     m.insert(

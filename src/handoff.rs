@@ -26,11 +26,11 @@ struct Plan<'a> {
     message: String,
 }
 
-/// `provider` comes from `-zai` / `-openrouter`. Without it, the conversation
+/// `provider` comes from a provider flag. Without it, the conversation
 /// goes to what the sidecar runs now, model included, like a plain launch.
 pub fn run(cfg: &Config, query: &str, provider: Option<String>) -> Result<()> {
     sidecar::assert_desktop()?;
-    // A mistyped -zai / -openrouter is reported before anything is searched.
+    // A mistyped provider flag is reported before anything is searched.
     if let Some(name) = &provider {
         cfg.provider(name)?;
     }

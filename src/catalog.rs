@@ -14,10 +14,12 @@ use std::process::{Command, Stdio};
 /// the minimal form (OpenAI's own entries carry `tool_mode`, which breaks
 /// other providers).
 const OPENROUTER: &str = include_str!("../catalogs/openrouter.json");
+const REFUSELESS: &str = include_str!("../catalogs/refuseless.json");
 
 pub fn bundled(provider: &str) -> Option<&'static str> {
     match provider {
         "openrouter" => Some(OPENROUTER),
+        "refuseless" => Some(REFUSELESS),
         _ => None,
     }
 }
@@ -136,6 +138,53 @@ mod tests {
         }
     }
 
+    #[test]
+    fn refuseless_catalog_has_documented_models_and_efforts() {
+        let bundled = bundled("refuseless").unwrap();
+        let v: Value = serde_json::from_str(bundled).unwrap();
+        let models = v["models"].as_array().unwrap();
+        let expected = [
+            "glm-5.3-abliterated",
+            "glm-5.3-flash-abliterated",
+            "deepseek-v4.1-flash-abliterated",
+            "deepseek-v4.1-flash-fast",
+            "minimax-m3.1-flash",
+        ];
+        assert_eq!(models.len(), expected.len());
+        for (m, slug) in models.iter().zip(expected) {
+            assert_eq!(m["slug"], slug);
+            assert_eq!(m["context_window"], 1048576);
+            assert_eq!(m["input_modalities"], json!(["text"]));
+            assert_eq!(m["default_reasoning_level"], "low");
+            assert_eq!(
+                m["supported_reasoning_levels"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|l| l["effort"].as_str().unwrap())
+                    .collect::<Vec<_>>(),
+                ["low", "high", "max"]
+            );
+            assert!(m.get("tool_mode").is_none());
+        }
+    }
+
+    #[test]
+    fn refuseless_catalog_is_created_once_without_overwriting_existing_choices() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg =
+            crate::config::Config::load(Some(std::path::Path::new("/nonexistent/c.toml"))).unwrap();
+        let mut p = cfg.provider("refuseless").unwrap().clone();
+        p.catalog = dir.path().join("refuseless_models.json");
+        assert!(!needs_fetch(&p));
+        assert!(matches!(ensure(&p).unwrap(), Outcome::Bundled));
+        let initial: Value = serde_json::from_slice(&std::fs::read(&p.catalog).unwrap()).unwrap();
+        assert_eq!(initial["models"].as_array().unwrap().len(), 5);
+        std::fs::write(&p.catalog, b"custom catalog").unwrap();
+        assert!(matches!(ensure(&p).unwrap(), Outcome::Present));
+        assert_eq!(std::fs::read(&p.catalog).unwrap(), b"custom catalog");
+    }
+
     /// The Windows script cannot share code with this binary, so what both
     /// must agree on is checked here.
     #[test]
@@ -146,6 +195,13 @@ mod tests {
         let body = &body[body.find('\n').unwrap() + 1..];
         let embedded: Value = serde_json::from_str(&body[..body.find("\n'@").unwrap()]).unwrap();
         assert_eq!(embedded, serde_json::from_str::<Value>(OPENROUTER).unwrap());
+        let start = script.find("$refuselessCatalog = @'").unwrap();
+        let body = &script[start..];
+        let body = &body[body.find('\n').unwrap() + 1..];
+        let embedded: Value = serde_json::from_str(&body[..body.find("\n'@").unwrap()]).unwrap();
+        assert_eq!(embedded, serde_json::from_str::<Value>(REFUSELESS).unwrap());
+        assert!(script.contains("$name -notin @('openrouter', 'refuseless')"));
+        assert!(script.contains("if ($name -eq 'refuseless') { Write-Utf8 $path"));
 
         // Compared with runs of whitespace collapsed: the script aligns columns.
         let flat = script.split_whitespace().collect::<Vec<_>>().join(" ");

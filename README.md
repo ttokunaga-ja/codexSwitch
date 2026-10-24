@@ -1,8 +1,8 @@
 # codexSwitch
 
-Codex アプリ（デスクトップ版）の**2つ目のインスタンス**を Z.ai Coding Plan や OpenRouter で起動し、本体の会話をそこへ引き継ぐ CLI ツールです。
+Codex アプリ（デスクトップ版）の**2つ目のインスタンス**を Z.ai Coding Plan / OpenRouter / Refuseless で起動し、本体の会話をそこへ引き継ぐ CLI ツールです。
 
-Run a second Codex app instance on Z.ai or OpenRouter and hand conversations from the main app over to it.
+Run a second Codex app instance on Z.ai, OpenRouter, or Refuseless and hand conversations from the main app over to it.
 
 > **非公式ツールです。** OpenAI とは無関係で、OpenAI による承認・保証はありません。
 > Unofficial. Not affiliated with or endorsed by OpenAI.
@@ -14,6 +14,7 @@ codexSwitch init                  最初の準備（設定とモデル一覧を�
 codexSwitch                       第2インスタンスを前回と同じ内容で起動
 codexSwitch -zai                  Z.ai で起動
 codexSwitch -openrouter           OpenRouter で起動
+codexSwitch -refuseless           Refuseless で起動
 codexSwitch handoff <チャット名/ID>  本体の会話を第2インスタンスへ引き継ぐ
 codexSwitch status                第2インスタンスと設定の状態を表示
 codexSwitch version               今の版と、最新かどうかを表示
@@ -22,11 +23,11 @@ codexSwitch update                最新のリリースに更新
 
 macOS と Windows で同じコマンドです。
 
-本体の Codex アプリ（ChatGPT アカウントの OpenAI モデル）には一切手を加えず、その横で Z.ai / OpenRouter 用のアプリを並べて使えます。
+本体の Codex アプリ（ChatGPT アカウントの OpenAI モデル）には一切手を加えず、その横で Z.ai / OpenRouter / Refuseless 用のアプリを並べて使えます。
 
 ```text
 ~/.codex        → 本体アプリ（ChatGPT / OpenAI）   ← 触らない
-~/.codex-switch → 第2インスタンス（Z.ai / OpenRouter）
+~/.codex-switch → 第2インスタンス（Z.ai / OpenRouter / Refuseless）
 ```
 
 ## 仕組み
@@ -40,7 +41,7 @@ Codex は `CODEX_HOME` ごとに**接続先（`model_provider`）を1つしか�
 - Codex アプリ
   - macOS: `/Applications/ChatGPT.app`
   - Windows: Microsoft Store 版（MSIX パッケージ `OpenAI.Codex`）
-- Z.ai Coding Plan か OpenRouter の API キー（使う方だけ）
+- Z.ai Coding Plan / OpenRouter / Refuseless の API キー（使う方だけ）
 
 ## はじめかた
 
@@ -82,6 +83,8 @@ codexSwitch init
 API キーのファイル（使うものだけで構いません）:
   OpenRouter       ~/.codex/openrouter.key  未設定
                    入れ方: printf %s '<キー>' > ~/.codex/openrouter.key
+  Refuseless       ~/.codex/refuseless.key  未設定
+                   入れ方: printf %s '<キー>' > ~/.codex/refuseless.key
   Z.ai Coding Plan ~/.codex/zai.key  ✓
 ```
 
@@ -93,6 +96,7 @@ API キーのファイル（使うものだけで構いません）:
 | --- | --- | --- |
 | Z.ai Coding Plan | `~/.codex/zai.key` | `%USERPROFILE%\.codex\zai.key` |
 | OpenRouter | `~/.codex/openrouter.key` | `%USERPROFILE%\.codex\openrouter.key` |
+| Refuseless | `~/.codex/refuseless.key` | `%USERPROFILE%\.codex\refuseless.key` |
 
 ```sh
 printf %s '<キー>' > ~/.codex/zai.key                                    # macOS
@@ -104,9 +108,22 @@ Set-Content -NoNewline -Path "$env:USERPROFILE\.codex\zai.key" -Value '<キー>'
 ```sh
 codexSwitch -zai
 codexSwitch -openrouter
+codexSwitch -refuseless
 ```
 
 起動するときは、その提供元のキーだけを確かめます。`-zai` で OpenRouter のキーを求めることはありません。キーがなければ、置き場所と入れ方を表示して止まります。Z.ai のモデル一覧は、キーが入ったあとの最初の起動で Z.ai から取得します。
+
+### Refuseless を使う
+
+```sh
+codexSwitch init
+# 案内に従って ~/.codex/refuseless.key に API キーを保存
+codexSwitch -refuseless
+codexSwitch -refuseless --model glm-5.3-flash-abliterated
+codexSwitch handoff <チャット名/ID> -refuseless
+```
+
+既存の利用者も `init` を再実行すると、現在の接続先・モデルを保ったまま Refuseless の接続設定と専用モデル一覧が追加されます。起動中の第2インスタンスから接続先を切り替える場合は、先にアプリを終了してください。
 
 ## init が用意するもの
 
@@ -134,6 +151,16 @@ requires_openai_auth = false
 command = "/bin/cat"
 args = ["/Users/you/.codex/openrouter.key"]
 
+[model_providers.refuseless]
+name = "Refuseless"
+base_url = "https://api.refuseless.com/v1"
+wire_api = "responses"
+requires_openai_auth = false
+
+[model_providers.refuseless.auth]
+command = "/bin/cat"
+args = ["/Users/you/.codex/refuseless.key"]
+
 [model_providers.zai]
 name = "Z.ai Coding Plan"
 base_url = "https://api.z.ai/api/v1"
@@ -157,6 +184,8 @@ args = ["/Users/you/.codex/zai.key"]
 
 - **Z.ai**（`zai_models.json`）：Z.ai が Codex 形式で配信している一覧（`GET https://api.z.ai/api/v1/models`）を取得します。そのままではアプリの Effort スライダーが2段しか出ないため、選べる段階を low〜max の5段に広げ、既定を high にします
 - **OpenRouter**（`model_catalog.json`）：Codex のツール呼び出しが通ることを確かめた無料モデル3つ（`nex-agi/nex-n2.5-pro:free`、`nvidia/nemotron-3-ultra-550b-a55b:free`、`inclusionai/ling-3.0-flash-vl:free`）で作ります。無料モデルの提供状況は変わるので、必要に応じて編集してください
+
+- **Refuseless**（`refuseless_models.json`）：[公開モデル一覧](https://api.refuseless.com/v1/models)（2026-10-24 確認）の5モデルを同梱します。既定は `glm-5.3-abliterated`、ほかに `glm-5.3-flash-abliterated`、`deepseek-v4.1-flash-abliterated`、`deepseek-v4.1-flash-fast`、`minimax-m3.1-flash` を選べます。[Responses API](https://docs.refuseless.com/api/responses) に直接接続し、Effort は全モデル共通の `low` / `high` / `max`（既定 `low`）に限定します。`medium` / `xhigh` は API が拒否するため含めません。モデル一覧は自動更新せず、既存ファイルは保持します。実際の推論・ツール呼び出しは API キーと残高が必要で、この追加では未検証です。
 
 OpenRouter のモデルを足すときは、1モデルにつき次の形で書きます。
 
@@ -219,6 +248,7 @@ $ codexSwitch status
 現在の設定      : zai / glm-5.3-flash
 起動先（既定のモデル）:
   -openrouter  nex-agi/nex-n2.5-pro:free                キー ✓  モデル一覧 ✓
+  -refuseless  glm-5.3-abliterated                      キー ✗  モデル一覧 ✓
   -zai         glm-5.3-flash                            キー ✓  モデル一覧 ✓
 codex           : /Applications/ChatGPT.app/Contents/Resources/codex (codex-cli 0.155.0-alpha.16.3)
 本体のホーム    : ~/.codex
@@ -231,19 +261,20 @@ codex           : /Applications/ChatGPT.app/Contents/Resources/codex (codex-cli 
 codexSwitch
 codexSwitch -zai
 codexSwitch -openrouter
+codexSwitch -refuseless
 codexSwitch -openrouter --model inclusionai/ling-3.0-flash-vl:free
 ```
 
 | 指定 | 起動する内容 |
 | --- | --- |
-| なし | 前回と同じ内容（`-zai` / `-openrouter` とモデル） |
-| `-zai` / `-openrouter` | それぞれの既定モデル（Z.ai は `glm-5.3-flash`、OpenRouter は `nex-agi/nex-n2.5-pro:free`） |
+| なし | 前回と同じ内容（`-zai` / `-openrouter` / `-refuseless` とモデル） |
+| `-zai` / `-openrouter` / `-refuseless` | それぞれの既定モデル（Z.ai は `glm-5.3-flash`、OpenRouter は `nex-agi/nex-n2.5-pro:free`、Refuseless は `glm-5.3-abliterated`） |
 | `--model <slug>` | 指定したモデル |
 
 起動中に実行したときは、次のようになります。
 
 - **前回と同じ内容**：第2インスタンスのウィンドウを表示します。×ボタンで閉じたあとに開き直すときにも使えます
-- **違う内容**：何もせずに止まります。`-zai` / `-openrouter` とモデルは起動時に読まれるため、アプリを終了してから、もう一度実行してください
+- **違う内容**：何もせずに止まります。`-zai` / `-openrouter` / `-refuseless` とモデルは起動時に読まれるため、アプリを終了してから、もう一度実行してください
 
 ### 終了する
 
@@ -258,13 +289,14 @@ codexSwitch -openrouter --model inclusionai/ling-3.0-flash-vl:free
 codexSwitch handoff <チャット名/ID>
 codexSwitch handoff <チャット名/ID> -zai
 codexSwitch handoff <チャット名/ID> -openrouter
+codexSwitch handoff <チャット名/ID> -refuseless
 ```
 
 例: `codexSwitch handoff ログイン画面`、`codexSwitch handoff WebAdmin update -zai`
 
 引き継ぐ会話は、チャット名（一部でよい）か ID で指定します。チャット名に空白があっても、引用符で囲まずにそのまま書けます。チャット名は会話の名前を優先して探し、見つからなければ最初のメッセージまで広げます。複数が該当したときは候補を表示して止まります。
 
-引き継ぎ先は、`-zai` / `-openrouter` を付けなければ第2インスタンスの今の内容（前回起動したものとそのモデル）です。付けたときは、それぞれの既定モデルです。
+引き継ぎ先は、`-zai` / `-openrouter` / `-refuseless` を付けなければ第2インスタンスの今の内容（前回起動したものとそのモデル）です。付けたときは、それぞれの既定モデルです。
 
 実行前に内容を表示し、確認を求めます。
 
@@ -290,7 +322,7 @@ codexSwitch handoff <チャット名/ID> -openrouter
 1. 本体（`~/.codex`）から会話を探す（読み取り専用）
 2. 会話ファイルを第2インスタンスへコピーする。フォークした会話なら、フォーク元までたどってすべてコピーする。本体のアプリで開いたままの会話も、書き終わった行までをコピーする。コピー後は読み返して検証する
 3. 確認のうえ、第2インスタンスが起動中なら、アプリの画面から終了されるのを待つ
-4. `app-server` の `thread/fork` で、引き継ぎ先（`-zai` / `-openrouter`）とモデルの会話を作る
+4. `app-server` の `thread/fork` で、引き継ぎ先（`-zai` / `-openrouter` / `-refuseless`）とモデルの会話を作る
 5. 名前を付け、最初のメッセージを送る
 6. 会話の作業ディレクトリから、第2インスタンスのプロジェクトを探して割り当てる
 7. 第2インスタンスを起動する
@@ -335,9 +367,9 @@ app_path      = "/Applications/ChatGPT.app"
 model    = "nvidia/nemotron-3-ultra-550b-a55b:free"
 ```
 
-`[providers.zai]` / `[providers.openrouter]` には、変えたい項目だけを書きます。書けるのは `model`（既定のモデル）、`catalog`（モデル一覧のファイル）、`effort`（既定の Effort）、`key_file`（API キーのファイル）です。
+`[providers.zai]` / `[providers.openrouter]` / `[providers.refuseless]` には、変えたい項目だけを書きます。書けるのは `model`（既定のモデル）、`catalog`（モデル一覧のファイル）、`effort`（既定の Effort）、`key_file`（API キーのファイル）です。
 
-Windows のスクリプト版はこの設定ファイルを読まず、既定値（`zai` と `openrouter`）で動きます。
+Windows のスクリプト版はこの設定ファイルを読まず、既定値（`zai` / `openrouter` / `refuseless`）で動きます。
 
 ## 注意事項
 
@@ -346,7 +378,7 @@ Windows のスクリプト版はこの設定ファイルを読まず、既定値
 - プロジェクトの割り当ては、アプリが止まっている間にだけ行います。起動中のアプリはこのファイルを丸ごと書き直すためです。書き換える前に `.codex-global-state.json.codex-switch.bak` へバックアップします
 - 第2インスタンスを終了すると、そこで実行中の作業は止まります
 - 引き継いだ会話は、第2インスタンスへコピーした**元の会話ファイルを参照**しています。`~/.codex-switch/sessions/` 以下のコピーは消さないでください
-- Z.ai / OpenRouter の会話を、**本体アプリ**に表示することはできません。本体アプリは自分の接続先（OpenAI）の会話しか並べないためです
+- Z.ai / OpenRouter / Refuseless の会話を、**本体アプリ**に表示することはできません。本体アプリは自分の接続先（OpenAI）の会話しか並べないためです
 - 最初のメッセージは読み取り専用で実行します。macOS ではファイルの書き込みが拒否されること、Windows ではコマンドの起動が拒否されること（codex の Windows 用サンドボックスによる）を実機で確認しています
 - API キーは設定ファイルに書かず、キーファイルから読み込みます
 

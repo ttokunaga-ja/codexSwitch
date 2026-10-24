@@ -217,12 +217,43 @@ mod tests {
         let t: toml::Table = toml::from_str(&new_config(&c)).unwrap();
         assert_eq!(t["model_provider"].as_str(), Some("zai"));
         let providers = t["model_providers"].as_table().unwrap();
-        for name in ["zai", "openrouter"] {
+        for name in ["zai", "openrouter", "refuseless"] {
             let p = providers[name].as_table().unwrap();
             assert_eq!(p["wire_api"].as_str(), Some("responses"));
             assert_eq!(p["requires_openai_auth"].as_bool(), Some(false));
             assert!(p["auth"]["command"].as_str().is_some());
         }
+    }
+
+    #[test]
+    fn repeated_init_adds_refuseless_without_changing_existing_choices() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut c = cfg();
+        c.sidecar_home = dir.path().to_path_buf();
+        let original = new_config(&c)
+            .replace(
+                "model_provider = \"zai\"",
+                "model_provider = \"openrouter\"",
+            )
+            .replace("model = \"glm-5.3-flash\"", "model = \"custom/model\"");
+        let start = original.find("\n[model_providers.refuseless]").unwrap();
+        let end = original[start + 1..]
+            .find("\n[model_providers.zai]")
+            .unwrap()
+            + start
+            + 1;
+        let original = format!("{}{}", &original[..start], &original[end..]);
+        std::fs::write(c.sidecar_config(), &original).unwrap();
+        config_file(&c).unwrap();
+        let updated = std::fs::read_to_string(c.sidecar_config()).unwrap();
+        assert!(updated.starts_with(&original));
+        assert!(updated.contains("[model_providers.refuseless]"));
+        assert!(updated.contains("[model_providers.refuseless.auth]"));
+        config_file(&c).unwrap();
+        assert_eq!(
+            updated,
+            std::fs::read_to_string(c.sidecar_config()).unwrap()
+        );
     }
 
     #[test]

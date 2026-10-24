@@ -2,8 +2,8 @@
 #
 #   codexSwitch init                                    最初の準備（設定とモデル一覧を作り、API キーの置き場所を案内する）
 #   codexSwitch                                         前回と同じ内容で起動
-#   codexSwitch -zai / -openrouter                      Z.ai / OpenRouter で起動（--model <slug> でモデルも指定できる）
-#   codexSwitch handoff <チャット名/ID> [-zai | -openrouter]   本体の会話を引き継ぐ（チャット名は引用符なしでよい）
+#   codexSwitch -zai / -openrouter / -refuseless      Z.ai / OpenRouter / Refuseless で起動（--model <slug> でモデルも指定できる）
+#   codexSwitch handoff <チャット名/ID> [-zai | -openrouter | -refuseless]   本体の会話を引き継ぐ（チャット名は引用符なしでよい）
 #   codexSwitch version                                 今の版と、最新かどうかを表示する
 #   codexSwitch update                                  最新のリリースに更新する
 #   codexSwitch uninstall                               このスクリプトと cmd だけを削除（確認あり）
@@ -75,6 +75,8 @@ $keyDir = Join-Path $env:USERPROFILE '.codex'
 $providers = [ordered]@{
   openrouter = @{ Label = 'OpenRouter'; Model = 'nex-agi/nex-n2.5-pro:free'; Catalog = 'model_catalog.json'; Effort = 'low'
                   Key = 'openrouter.key'; BaseUrl = 'https://openrouter.ai/api/v1'; CatalogUrl = $null }
+  refuseless = @{ Label = 'Refuseless'; Model = 'glm-5.3-abliterated'; Catalog = 'refuseless_models.json'; Effort = 'low'
+                  Key = 'refuseless.key'; BaseUrl = 'https://api.refuseless.com/v1'; CatalogUrl = $null }
   zai        = @{ Label = 'Z.ai Coding Plan'; Model = 'glm-5.3-flash'; Catalog = 'zai_models.json'; Effort = 'high'
                   Key = 'zai.key'; BaseUrl = 'https://api.z.ai/api/v1'; CatalogUrl = 'https://api.z.ai/api/v1/models' }
 }
@@ -219,6 +221,219 @@ $openRouterCatalog = @'
 }
 '@
 
+# Same as catalogs/refuseless.json; kept in sync by the Rust parity test.
+$refuselessCatalog = @'
+{
+  "models": [
+    {
+      "apply_patch_tool_type": "freeform",
+      "base_instructions": "",
+      "context_window": 1048576,
+      "default_reasoning_level": "low",
+      "default_reasoning_summary": "none",
+      "description": "Refuseless text model.",
+      "display_name": "glm-5.3-abliterated",
+      "effective_context_window_percent": 95,
+      "experimental_supported_tools": [],
+      "input_modalities": [
+        "text"
+      ],
+      "max_context_window": 1048576,
+      "priority": 1,
+      "shell_type": "shell_command",
+      "slug": "glm-5.3-abliterated",
+      "support_verbosity": false,
+      "supported_in_api": true,
+      "supported_reasoning_levels": [
+        {
+          "effort": "low",
+          "description": "Light reasoning"
+        },
+        {
+          "effort": "high",
+          "description": "Enhanced reasoning"
+        },
+        {
+          "effort": "max",
+          "description": "Deep reasoning"
+        }
+      ],
+      "supports_parallel_tool_calls": false,
+      "supports_reasoning_summaries": true,
+      "truncation_policy": {
+        "limit": 10000,
+        "mode": "bytes"
+      },
+      "visibility": "list"
+    },
+    {
+      "apply_patch_tool_type": "freeform",
+      "base_instructions": "",
+      "context_window": 1048576,
+      "default_reasoning_level": "low",
+      "default_reasoning_summary": "none",
+      "description": "Refuseless text model.",
+      "display_name": "glm-5.3-flash-abliterated",
+      "effective_context_window_percent": 95,
+      "experimental_supported_tools": [],
+      "input_modalities": [
+        "text"
+      ],
+      "max_context_window": 1048576,
+      "priority": 2,
+      "shell_type": "shell_command",
+      "slug": "glm-5.3-flash-abliterated",
+      "support_verbosity": false,
+      "supported_in_api": true,
+      "supported_reasoning_levels": [
+        {
+          "effort": "low",
+          "description": "Light reasoning"
+        },
+        {
+          "effort": "high",
+          "description": "Enhanced reasoning"
+        },
+        {
+          "effort": "max",
+          "description": "Deep reasoning"
+        }
+      ],
+      "supports_parallel_tool_calls": false,
+      "supports_reasoning_summaries": true,
+      "truncation_policy": {
+        "limit": 10000,
+        "mode": "bytes"
+      },
+      "visibility": "list"
+    },
+    {
+      "apply_patch_tool_type": "freeform",
+      "base_instructions": "",
+      "context_window": 1048576,
+      "default_reasoning_level": "low",
+      "default_reasoning_summary": "none",
+      "description": "Refuseless text model.",
+      "display_name": "deepseek-v4.1-flash-abliterated",
+      "effective_context_window_percent": 95,
+      "experimental_supported_tools": [],
+      "input_modalities": [
+        "text"
+      ],
+      "max_context_window": 1048576,
+      "priority": 3,
+      "shell_type": "shell_command",
+      "slug": "deepseek-v4.1-flash-abliterated",
+      "support_verbosity": false,
+      "supported_in_api": true,
+      "supported_reasoning_levels": [
+        {
+          "effort": "low",
+          "description": "Light reasoning"
+        },
+        {
+          "effort": "high",
+          "description": "Enhanced reasoning"
+        },
+        {
+          "effort": "max",
+          "description": "Deep reasoning"
+        }
+      ],
+      "supports_parallel_tool_calls": false,
+      "supports_reasoning_summaries": true,
+      "truncation_policy": {
+        "limit": 10000,
+        "mode": "bytes"
+      },
+      "visibility": "list"
+    },
+    {
+      "apply_patch_tool_type": "freeform",
+      "base_instructions": "",
+      "context_window": 1048576,
+      "default_reasoning_level": "low",
+      "default_reasoning_summary": "none",
+      "description": "Refuseless text model.",
+      "display_name": "deepseek-v4.1-flash-fast",
+      "effective_context_window_percent": 95,
+      "experimental_supported_tools": [],
+      "input_modalities": [
+        "text"
+      ],
+      "max_context_window": 1048576,
+      "priority": 4,
+      "shell_type": "shell_command",
+      "slug": "deepseek-v4.1-flash-fast",
+      "support_verbosity": false,
+      "supported_in_api": true,
+      "supported_reasoning_levels": [
+        {
+          "effort": "low",
+          "description": "Light reasoning"
+        },
+        {
+          "effort": "high",
+          "description": "Enhanced reasoning"
+        },
+        {
+          "effort": "max",
+          "description": "Deep reasoning"
+        }
+      ],
+      "supports_parallel_tool_calls": false,
+      "supports_reasoning_summaries": true,
+      "truncation_policy": {
+        "limit": 10000,
+        "mode": "bytes"
+      },
+      "visibility": "list"
+    },
+    {
+      "apply_patch_tool_type": "freeform",
+      "base_instructions": "",
+      "context_window": 1048576,
+      "default_reasoning_level": "low",
+      "default_reasoning_summary": "none",
+      "description": "Refuseless text model.",
+      "display_name": "minimax-m3.1-flash",
+      "effective_context_window_percent": 95,
+      "experimental_supported_tools": [],
+      "input_modalities": [
+        "text"
+      ],
+      "max_context_window": 1048576,
+      "priority": 5,
+      "shell_type": "shell_command",
+      "slug": "minimax-m3.1-flash",
+      "support_verbosity": false,
+      "supported_in_api": true,
+      "supported_reasoning_levels": [
+        {
+          "effort": "low",
+          "description": "Light reasoning"
+        },
+        {
+          "effort": "high",
+          "description": "Enhanced reasoning"
+        },
+        {
+          "effort": "max",
+          "description": "Deep reasoning"
+        }
+      ],
+      "supports_parallel_tool_calls": false,
+      "supports_reasoning_summaries": true,
+      "truncation_policy": {
+        "limit": 10000,
+        "mode": "bytes"
+      },
+      "visibility": "list"
+    }
+  ]
+}
+'@
+
 function Fail($message) {
   [Console]::Error.WriteLine("エラー: $message")
   exit 1
@@ -270,9 +485,9 @@ function ProviderTables($name) {
   "args = [`"/c`", `"type`", $(TomlString (KeyFile $name))]`n"
 }
 
-function NeedsFetch($name) { -not (Test-Path (CatalogFile $name)) -and $name -ne 'openrouter' -and $providers[$name].CatalogUrl }
+function NeedsFetch($name) { -not (Test-Path (CatalogFile $name)) -and $name -notin @('openrouter', 'refuseless') -and $providers[$name].CatalogUrl }
 
-# Creates a missing model catalog: OpenRouter's from the copy above, Z.ai's
+# Creates missing bundled OpenRouter and Refuseless catalogs, or Z.ai's
 # from Z.ai (which needs the key). Z.ai lists fewer reasoning levels than its
 # models accept, so the app's Effort slider would show only two steps.
 function Ensure-Catalog($name) {
@@ -280,6 +495,7 @@ function Ensure-Catalog($name) {
   if (Test-Path $path) { return 'Present' }
   New-Item -ItemType Directory -Force $sidecarHome | Out-Null
   if ($name -eq 'openrouter') { Write-Utf8 $path "$openRouterCatalog`n"; return 'Bundled' }
+  if ($name -eq 'refuseless') { Write-Utf8 $path "$refuselessCatalog`n"; return 'Bundled' }
   $url = $providers[$name].CatalogUrl
   if (-not $url) { throw "$($providers[$name].Label) のモデル一覧がありません: $path" }
   $key = ([IO.File]::ReadAllText((KeyFile $name))).Trim()
@@ -432,10 +648,10 @@ function Set-Active($name, $model) {
   Write-Utf8 $config ($text.Substring(0, $start) + (ManagedBlock $name $model) + $text.Substring($end + $managedEnd.Length))
 }
 
-# Without -zai / -openrouter, exactly what ran last time; with one, its default model.
+# Without -zai / -openrouter / -refuseless, exactly what ran last time; with one, its default model.
 function Resolve-Target($provider, $active) {
   $name = if ($provider) { $provider } else { $active['model_provider'] }
-  if (-not $providers.Contains([string]$name)) { Fail "-$name は使えません。-zai か -openrouter を指定してください" }
+  if (-not $providers.Contains([string]$name)) { Fail "-$name は使えません。-zai、-openrouter、-refuseless のいずれかを指定してください" }
   $model = if (-not $provider -and $active['model']) { $active['model'] } else { $providers[$name].Model }
   $name, $model
 }
@@ -480,7 +696,7 @@ function Launch($provider, $model) {
       Step "第2インスタンスは $name / $model で起動中です。ウィンドウを表示しました"
       return
     }
-    Fail ("第2インスタンスが $($active['model_provider']) / $($active['model']) で起動中です。-zai / -openrouter とモデルは起動時に読まれるため、" +
+    Fail ("第2インスタンスが $($active['model_provider']) / $($active['model']) で起動中です。-zai / -openrouter / -refuseless とモデルは起動時に読まれるため、" +
       "アプリを終了してから、もう一度実行してください`n  終了のしかた: $quitHowto")
   }
   try { Start-AndWait $name $model } catch { Fail $_.Exception.Message }
@@ -1046,7 +1262,7 @@ if ($command -eq 'update') {
 }
 if ($command -eq 'handoff') {
   # The chat name may be written without quotes: every word that is not
-  # -zai / -openrouter belongs to it. After --, every word does.
+  # -zai / -openrouter / -refuseless belongs to it. After --, every word does.
   $provider = $null
   $words = @()
   $literal = $false
@@ -1054,14 +1270,14 @@ if ($command -eq 'handoff') {
     $arg = [string]$arg
     if (-not $literal -and $arg -eq '--') { $literal = $true; continue }
     if (-not $literal -and $arg -match '^-([A-Za-z0-9][A-Za-z0-9_-]+)$') {
-      if ($provider) { Fail '-zai / -openrouter は1つだけ指定してください' }
+      if ($provider) { Fail '-zai / -openrouter / -refuseless は1つだけ指定してください' }
       $provider = $Matches[1].ToLower()
-      if (-not $providers.Contains($provider)) { Fail "-$provider は使えません。-zai か -openrouter を指定してください" }
+      if (-not $providers.Contains($provider)) { Fail "-$provider は使えません。-zai、-openrouter、-refuseless のいずれかを指定してください" }
       continue
     }
     $words += $arg
   }
-  if (-not $words) { Fail '引き継ぐチャット名か ID を指定してください（使い方: codexSwitch handoff <チャット名/ID> [-zai | -openrouter]）' }
+  if (-not $words) { Fail '引き継ぐチャット名か ID を指定してください（使い方: codexSwitch handoff <チャット名/ID> [-zai | -openrouter | -refuseless]）' }
   Handoff ($words -join ' ') $provider
   exit 0
 }
@@ -1084,8 +1300,8 @@ for ($i = 0; $i -lt $args.Count; $i++) {
   } elseif ($arg -eq 'status') {
     Fail 'status には codexSwitch.exe が必要です。このスクリプト版は準備（init）、起動、引き継ぎ（handoff）、更新（update）を行います'
   } else {
-    Fail "不明な引数です: $arg（使い方: codexSwitch init | codexSwitch [-zai | -openrouter] [--model <slug>] | codexSwitch handoff <チャット名/ID> [-zai | -openrouter] | codexSwitch version | codexSwitch update | codexSwitch uninstall）"
+    Fail "不明な引数です: $arg（使い方: codexSwitch init | codexSwitch [-zai | -openrouter | -refuseless] [--model <slug>] | codexSwitch handoff <チャット名/ID> [-zai | -openrouter | -refuseless] | codexSwitch version | codexSwitch update | codexSwitch uninstall）"
   }
 }
-if ($provider -and -not $providers.Contains($provider)) { Fail "-$provider は使えません。-zai か -openrouter を指定してください" }
+if ($provider -and -not $providers.Contains($provider)) { Fail "-$provider は使えません。-zai、-openrouter、-refuseless のいずれかを指定してください" }
 Launch $provider $model

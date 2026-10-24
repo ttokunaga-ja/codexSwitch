@@ -30,10 +30,10 @@ use std::process::ExitCode;
 #[command(
     name = "codexSwitch",
     version,
-    about = "Codex アプリの2つ目のインスタンスを Z.ai / OpenRouter で起動し、会話を引き継ぐ（非公式ツール）",
-    override_usage = "codexSwitch [-zai | -openrouter] [--model <MODEL>]\n       \
+    about = "Codex アプリの2つ目のインスタンスを Z.ai / OpenRouter / Refuseless で起動し、会話を引き継ぐ（非公式ツール）",
+    override_usage = "codexSwitch [-zai | -openrouter | -refuseless] [--model <MODEL>]\n       \
         codexSwitch init\n       \
-        codexSwitch handoff <チャット名/ID> [-zai | -openrouter]\n       \
+        codexSwitch handoff <チャット名/ID> [-zai | -openrouter | -refuseless]\n       \
         codexSwitch status\n       \
         codexSwitch version\n       \
         codexSwitch update\n       \
@@ -43,20 +43,21 @@ use std::process::ExitCode;
         codexSwitch                      前回と同じ内容で起動する\n  \
         codexSwitch -zai                 Z.ai で起動する\n  \
         codexSwitch -openrouter          OpenRouter で起動する\n  \
+        codexSwitch -refuseless          Refuseless で起動する\n  \
         codexSwitch handoff <チャット名/ID>  本体の会話を引き継ぐ\n  \
         codexSwitch version              今の版と、最新かどうかを表示する\n  \
         codexSwitch update               最新のリリースに更新する\n  \
         codexSwitch uninstall            CLI 本体だけを削除する（確認あり）\n\n\
-        終了はアプリの画面から行います（起動中に -zai / -openrouter を切り替えるときも、先に終了します）。"
+        終了はアプリの画面から行います（起動中に提供元を切り替えるときも、先に終了します）。"
 )]
 struct Cli {
     /// 設定ファイル（既定: ~/.config/codex-switch/config.toml）
     #[arg(long, global = true, value_name = "PATH")]
     config: Option<PathBuf>,
-    /// -zai / -openrouter の受け口。直接は使わない
+    /// -zai / -openrouter / -refuseless の受け口。直接は使わない
     #[arg(long, hide = true)]
     provider: Option<String>,
-    /// モデル（既定: 前回と同じ。-zai / -openrouter を付けたときはその既定モデル）
+    /// モデル（既定: 前回と同じ。提供元を指定したときはその既定モデル）
     #[arg(long)]
     model: Option<String>,
     #[command(subcommand)]
@@ -67,13 +68,15 @@ struct Cli {
 enum Command {
     /// 最初の準備: 第2インスタンスの設定とモデル一覧を作り、API キーの置き場所を案内する
     Init,
-    /// 本体の会話を第2インスタンスへ引き継ぐ（-zai / -openrouter で引き継ぎ先を選べる）
-    #[command(override_usage = "codexSwitch handoff <チャット名/ID> [-zai | -openrouter]")]
+    /// 本体の会話を第2インスタンスへ引き継ぐ（提供元を指定できる）
+    #[command(
+        override_usage = "codexSwitch handoff <チャット名/ID> [-zai | -openrouter | -refuseless]"
+    )]
     Handoff {
         /// 引き継ぐ会話の名前（一部でよい）または ID。空白を含む名前も引用符なしで書ける
         #[arg(value_name = "チャット名/ID", required = true, num_args = 1..)]
         query: Vec<String>,
-        /// -zai / -openrouter の受け口。直接は使わない
+        /// -zai / -openrouter / -refuseless の受け口。直接は使わない
         #[arg(long, hide = true)]
         provider: Option<String>,
     },
@@ -149,7 +152,7 @@ fn run(cli: Cli) -> Result<()> {
     // --config, so the launch-only options are checked here.
     if cli.command.is_some() && (cli.provider.is_some() || cli.model.is_some()) {
         bail!(
-            "-zai / -openrouter はサブコマンドの後に書いてください（例: codexSwitch handoff <チャット名/ID> -zai）"
+            "提供元の指定はサブコマンドの後に書いてください（例: codexSwitch handoff <チャット名/ID> -refuseless）"
         );
     }
     if matches!(cli.command, Some(Command::Uninstall)) {
@@ -214,7 +217,7 @@ fn launch(cfg: &Config, provider: Option<String>, model: Option<String>) -> Resu
             return Ok(());
         }
         bail!(
-            "第2インスタンスが {} / {} で起動中です。-zai / -openrouter とモデルは起動時に読まれるため、\
+            "第2インスタンスが {} / {} で起動中です。提供元とモデルは起動時に読まれるため、\
              アプリを終了してから、もう一度実行してください\n  終了のしかた: {}",
             active.provider,
             active.model,
@@ -339,6 +342,12 @@ mod tests {
         assert_eq!(cli.provider.as_deref(), Some("openrouter"));
         assert_eq!(cli.model.as_deref(), Some("m"));
 
+        let cli = Cli::try_parse_from(expand_provider_flags(
+            ["codexSwitch", "-refuseless"].map(OsString::from),
+        ))
+        .unwrap();
+        assert_eq!(cli.provider.as_deref(), Some("refuseless"));
+
         let cli = Cli::try_parse_from(["codexSwitch"]).unwrap();
         assert!(cli.command.is_none() && cli.provider.is_none());
 
@@ -350,6 +359,13 @@ mod tests {
             cli.command,
             Some(Command::Handoff { provider: Some(ref p), .. }) if p == "zai"
         ));
+        let cli = Cli::try_parse_from(expand_provider_flags(
+            ["codexSwitch", "handoff", "abc", "-refuseless"].map(OsString::from),
+        ))
+        .unwrap();
+        assert!(
+            matches!(cli.command, Some(Command::Handoff { provider: Some(ref p), .. }) if p == "refuseless")
+        );
     }
 
     #[test]

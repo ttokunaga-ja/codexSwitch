@@ -1,0 +1,209 @@
+{
+  "models": [
+    {
+      "apply_patch_tool_type": "freeform",
+      "base_instructions": "",
+      "context_window": 1048576,
+      "default_reasoning_level": "low",
+      "default_reasoning_summary": "none",
+      "description": "Refuseless text model.",
+      "display_name": "glm-5.3-abliterated",
+      "effective_context_window_percent": 95,
+      "experimental_supported_tools": [],
+      "input_modalities": [
+        "text"
+      ],
+      "max_context_window": 1048576,
+      "priority": 1,
+      "shell_type": "shell_command",
+      "slug": "glm-5.3-abliterated",
+      "support_verbosity": false,
+      "supported_in_api": true,
+      "supported_reasoning_levels": [
+        {
+          "effort": "low",
+          "description": "Light reasoning"
+        },
+        {
+          "effort": "high",
+          "description": "Enhanced reasoning"
+        },
+        {
+          "effort": "max",
+          "description": "Deep reasoning"
+        }
+      ],
+      "supports_parallel_tool_calls": false,
+      "supports_reasoning_summaries": true,
+      "truncation_policy": {
+        "limit": 10000,
+        "mode": "bytes"
+      },
+      "visibility": "list"
+    },
+    {
+      "apply_patch_tool_type": "freeform",
+      "base_instructions": "",
+      "context_window": 1048576,
+      "default_reasoning_level": "low",
+      "default_reasoning_summary": "none",
+      "description": "Refuseless text model.",
+      "display_name": "glm-5.3-flash-abliterated",
+      "effective_context_window_percent": 95,
+      "experimental_supported_tools": [],
+      "input_modalities": [
+        "text"
+      ],
+      "max_context_window": 1048576,
+      "priority": 2,
+      "shell_type": "shell_command",
+      "slug": "glm-5.3-flash-abliterated",
+      "support_verbosity": false,
+      "supported_in_api": true,
+      "supported_reasoning_levels": [
+        {
+          "effort": "low",
+          "description": "Light reasoning"
+        },
+        {
+          "effort": "high",
+          "description": "Enhanced reasoning"
+        },
+        {
+          "effort": "max",
+          "description": "Deep reasoning"
+        }
+      ],
+      "supports_parallel_tool_calls": false,
+      "supports_reasoning_summaries": true,
+      "truncation_policy": {
+        "limit": 10000,
+        "mode": "bytes"
+      },
+      "visibility": "list"
+    },
+    {
+      "apply_patch_tool_type": "freeform",
+      "base_instructions": "",
+      "context_window": 1048576,
+      "default_reasoning_level": "low",
+      "default_reasoning_summary": "none",
+      "description": "Refuseless text model.",
+      "display_name": "deepseek-v4.1-flash-abliterated",
+      "effective_context_window_percent": 95,
+      "experimental_supported_tools": [],
+      "input_modalities": [
+        "text"
+      ],
+      "max_context_window": 1048576,
+      "priority": 3,
+      "shell_type": "shell_command",
+      "slug": "deepseek-v4.1-flash-abliterated",
+      "support_verbosity": false,
+      "supported_in_api": true,
+      "supported_reasoning_levels": [
+        {
+          "effort": "low",
+          "description": "Light reasoning"
+        },
+        {
+          "effort": "high",
+          "description": "Enhanced reasoning"
+        },
+        {
+          "effort": "max",
+          "description": "Deep reasoning"
+        }
+      ],
+      "supports_parallel_tool_calls": false,
+      "supports_reasoning_summaries": true,
+      "truncation_policy": {
+        "limit": 10000,
+        "mode": "bytes"
+      },
+      "visibility": "list"
+    },
+    {
+      "apply_patch_tool_type": "freeform",
+      "base_instructions": "",
+      "context_window": 1048576,
+      "default_reasoning_level": "low",
+      "default_reasoning_summary": "none",
+      "description": "Refuseless text model.",
+      "display_name": "deepseek-v4.1-flash-fast",
+      "effective_context_window_percent": 95,
+      "experimental_supported_tools": [],
+      "input_modalities": [
+        "text"
+      ],
+      "max_context_window": 1048576,
+      "priority": 4,
+      "shell_type": "shell_command",
+      "slug": "deepseek-v4.1-flash-fast",
+      "support_verbosity": false,
+      "supported_in_api": true,
+      "supported_reasoning_levels": [
+        {
+          "effort": "low",
+          "description": "Light reasoning"
+        },
+        {
+          "effort": "high",
+          "description": "Enhanced reasoning"
+        },
+        {
+          "effort": "max",
+          "description": "Deep reasoning"
+        }
+      ],
+      "supports_parallel_tool_calls": false,
+      "supports_reasoning_summaries": true,
+      "truncation_policy": {
+        "limit": 10000,
+        "mode": "bytes"
+      },
+      "visibility": "list"
+    },
+    {
+      "apply_patch_tool_type": "freeform",
+      "base_instructions": "",
+      "context_window": 1048576,
+      "default_reasoning_level": "low",
+      "default_reasoning_summary": "none",
+      "description": "Refuseless text model.",
+      "display_name": "minimax-m3.1-flash",
+      "effective_context_window_percent": 95,
+      "experimental_supported_tools": [],
+      "input_modalities": [
+        "text"
+      ],
+      "max_context_window": 1048576,
+      "priority": 5,
+      "shell_type": "shell_command",
+      "slug": "minimax-m3.1-flash",
+      "support_verbosity": false,
+      "supported_in_api": true,
+      "supported_reasoning_levels": [
+        {
+          "effort": "low",
+          "description": "Light reasoning"
+        },
+        {
+          "effort": "high",
+          "description": "Enhanced reasoning"
+        },
+        {
+          "effort": "max",
+          "description": "Deep reasoning"
+        }
+      ],
+      "supports_parallel_tool_calls": false,
+      "supports_reasoning_summaries": true,
+      "truncation_policy": {
+        "limit": 10000,
+        "mode": "bytes"
+      },
+      "visibility": "list"
+    }
+  ]
+}
